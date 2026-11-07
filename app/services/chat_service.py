@@ -1,15 +1,14 @@
-"""Servicio de Asistente Virtual IA con RAG Contextual para el Carnaval de Negros y Blancos de Pasto.
+"""Servicio del Asistente Virtual Cultural 'GuaneñaBot' para el Carnaval de Negros y Blancos de Pasto.
 
-Integra Google Gemini (gemini-2.5-flash) con contexto dinámico de:
-1. Base de datos cultural oficial del Carnaval de San Juan de Pasto (28-dic a 07-ene).
-2. Restaurantes conocidos y gastronomía tradicional nariñense con geolocalización y cálculo de proximidad.
-3. Formato estructurado JSON con 'reply' y 'action' ({ "type": "ROUTE", "target_name", "target_coords" }).
-4. Puntos de interés en vivo (Salud, Policía, Tarimas, Baños) y reportes ciudadanos activos.
+Integra Google Gemini con contexto dinámico y generador heurístico de alta fidelidad:
+1. Personalidad: Calidez pastusa, festiva y respetuosa ("¡Que viva Pasto, Carajo!").
+2. Conocimiento: Fechas exactas del Carnaval (28 Dic, 2, 3, 4, 5 y 6 de Enero), hitos de la Senda
+   (Normal Superior, Cra 27, Plaza del Carnaval, Champagnat) y puestos de primeros auxilios (PMUs).
+3. Acciones estructuradas de mapa: Coordenadas sugeridas, rutas y vistas de cámara 3D (pitch, bearing, zoom).
 """
 import json
 import logging
 import math
-import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
@@ -26,7 +25,70 @@ from app.schemas.chat import ChatResponse
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
-# 1. BASE DE DATOS CULTURAL DEL CARNAVAL DE PASTO (28 Dic - 07 Ene)
+# 1. HITOS DE LA SENDA Y PUESTOS DE PRIMEROS AUXILIOS DEL CARNAVAL DE PASTO
+# ==============================================================================
+CARNIVAL_LANDMARKS_DATA: Dict[str, Dict[str, Any]] = {
+    "normal_superior": {
+        "name": "Escuela Normal Superior de Pasto",
+        "category": "Hito Senda (Salida)",
+        "coords": [1.2050, -77.2830],
+        "camera_view": {"center": [1.2050, -77.2830], "zoom": 17.0, "pitch": 50.0, "bearing": 20.0},
+        "description": "Punto oficial de partida y concentración de todos los desfiles magnos del Carnaval."
+    },
+    "carrera_27": {
+        "name": "Eje Carrera 27 (La Senda del Carnaval)",
+        "category": "Hito Senda (Eje Central)",
+        "coords": [1.2125, -77.2770],
+        "camera_view": {"center": [1.2125, -77.2770], "zoom": 16.5, "pitch": 55.0, "bearing": 35.0},
+        "description": "Corredor principal de 7 km por donde transitan carrozas monumentales, comparsas y murgas."
+    },
+    "plaza_carnaval": {
+        "name": "Plaza del Carnaval y la Cultura",
+        "category": "Hito Senda (Epicentro Cultural)",
+        "coords": [1.2115, -77.2765],
+        "camera_view": {"center": [1.2115, -77.2765], "zoom": 17.5, "pitch": 45.0, "bearing": 0.0},
+        "description": "Epicentro festivo de graderías, tarima principal de orquestas y máxima concentración ciudadana."
+    },
+    "champagnat": {
+        "name": "Sector Champagnat (IEM Ciudad de Pasto)",
+        "category": "Hito Senda (Llegada)",
+        "coords": [1.2190, -77.2740],
+        "camera_view": {"center": [1.2190, -77.2740], "zoom": 16.8, "pitch": 45.0, "bearing": 330.0},
+        "description": "Zona norte de desconcentración, culminación de carrozas y desembarque de artistas."
+    },
+    # Puestos de Primeros Auxilios y Salud
+    "pmu_plaza_carnaval": {
+        "name": "PMU Plaza del Carnaval (Cruz Roja y Defensa Civil)",
+        "category": "Primeros Auxilios",
+        "coords": [1.2118, -77.2760],
+        "camera_view": {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0},
+        "description": "Puesto de Mando Unificado central con ambulancias medicalizadas, paramédicos y carpas de triaje."
+    },
+    "pmu_normal_superior": {
+        "name": "PMU Normal Superior (Punto de Salida)",
+        "category": "Primeros Auxilios",
+        "coords": [1.2055, -77.2825],
+        "camera_view": {"center": [1.2055, -77.2825], "zoom": 17.5, "pitch": 45.0, "bearing": 0.0},
+        "description": "Atención médica preliminar para artistas, danzantes y espectadores en el arranque de la senda."
+    },
+    "pmu_carrera_27_calle_19": {
+        "name": "Puesto de Salud Carrera 27 con Calle 19",
+        "category": "Primeros Auxilios",
+        "coords": [1.2140, -77.2775],
+        "camera_view": {"center": [1.2140, -77.2775], "zoom": 17.8, "pitch": 45.0, "bearing": 15.0},
+        "description": "Módulo de socorro intermedio para desmayos, insolación o extravíos en el cruce de la Plaza de Nariño."
+    },
+    "pmu_champagnat": {
+        "name": "PMU Champagnat (Punto de Llegada)",
+        "category": "Primeros Auxilios",
+        "coords": [1.2188, -77.2745],
+        "camera_view": {"center": [1.2188, -77.2745], "zoom": 17.5, "pitch": 40.0, "bearing": 320.0},
+        "description": "Puesto de atención médica para desconcentración y valoración final del personal de comparsas."
+    }
+}
+
+# ==============================================================================
+# 2. FECHAS OFICIALES Y PROGRAMACIÓN DEL CARNAVAL DE PASTO
 # ==============================================================================
 CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
     "28-dic": {
@@ -41,12 +103,12 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
         "notes": "Zona céntrica totalmente peatonal para artistas, niños y familias."
     },
     "31-dic": {
-        "name": "Años Viejos - Senda Cra 27",
+        "name": "Desfile de Años Viejos y Viudas",
         "date_label": "31 de Diciembre",
         "hours": "08:00 - 16:00",
         "description": "Desfile de Años Viejos y Viudas. Humor, sátira política, testamentos y quema simbólica de monigotes.",
-        "start": "Salida: Escuela Normal Superior / Transversal del Caracha",
-        "end": "Llegada: Sector Champagnat (IEM Ciudad de Pasto)",
+        "start": "Salida: Escuela Normal Superior",
+        "end": "Llegada: Sector Champagnat",
         "closed_points": [
             "Bloqueo Caracha / Cra 27",
             "Cierre Calle 19 y acceso Plaza de Nariño",
@@ -65,13 +127,13 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
             "Cierre Cra 27 sur-norte",
             "Cierre Calle 19 (Plaza Nariño)"
         ],
-        "notes": "Gran afluencia de niños; se recomienda especial cuidado y puntos de encuentro fijos."
+        "notes": "Gran afluencia de niños; se recomienda especial cuidado y acordar puntos de encuentro fijos."
     },
     "03-ene": {
         "name": "Canto a la Tierra",
         "date_label": "03 de Enero",
         "hours": "09:00 - 16:00",
-        "description": "Desfile de Colectivos Coreográficos. Miles de músicos y danzantes andinos con zampoñas, bombos, quenas y trajes multicolores.",
+        "description": "Desfile de Colectivos Coreográficos. Miles de músicos y danzantes andinos con zampoñas, bombos, quenas y trajes multicolores por la Cra 27.",
         "start": "Salida: Escuela Normal Superior",
         "end": "Llegada: Sector Champagnat",
         "closed_points": [
@@ -82,7 +144,7 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
         "notes": "Sonoridad andina ininterrumpida a lo largo de toda la senda de la Cra 27."
     },
     "04-ene": {
-        "name": "Familia Castañeda",
+        "name": "Llegada de la Familia Castañeda",
         "date_label": "04 de Enero",
         "hours": "08:00 - 15:00",
         "description": "Llegada de la Familia Castañeda. Teatro callejero, carretas de época y bienvenida festiva recreando la comitiva campesina de 1929.",
@@ -98,7 +160,7 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
         "name": "Día de Negros - Juego de pintica y tarimas",
         "date_label": "05 de Enero",
         "hours": "11:00 - 23:00",
-        "description": "Conmemoración de la libertad y la igualdad étnica; juego fraterno con cosmético negro, orquestas en vivo y tarimas musicales. (No hay desfile de carrozas monumentales).",
+        "description": "Conmemoración de la libertad y la igualdad étnica; juego fraternal con cosmético negro, orquestas en vivo y tarimas musicales. (No hay desfile de carrozas monumentales).",
         "closed_points": [
             "Peatonalización Plaza del Carnaval",
             "Peatonalización Plaza de Nariño",
@@ -111,15 +173,12 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
         "date_label": "06 de Enero",
         "hours": "05:00 - 17:00",
         "description": "La cumbre del Carnaval: Majestuosas Carrozas Monumentales de hasta 12m de altura, comparsas, murgas, juego con talco perfumado y carioca.",
-        "start": "Salida: Avenida Emmanuel (Tamasagra / Anganoy)",
-        "end": "Llegada: Avenida Alfonso Zambrano (Estadio Libertad)",
+        "start": "Salida: Escuela Normal Superior / Avenida Emmanuel",
+        "end": "Llegada: Sector Champagnat",
         "closed_points": [
-            "Cierre Av. Emmanuel desde las 5:00 AM",
-            "Cierre Avenida Mijitayo",
-            "Corte cruce Av. Panamericana",
-            "Cierre Carrera 27",
-            "Cierre Calle 19",
-            "Cierre Av. Alfonso Zambrano"
+            "Cierre Carrera 27 desde las 5:00 AM",
+            "Cierre Avenida Mijitayo y cruce Panamericana",
+            "Cierre Calle 19 y Sector Champagnat"
         ],
         "notes": "Cierres masivos en la ciudad desde la madrugada. Máxima concentración de público. Usar gafas protectoras."
     },
@@ -137,7 +196,7 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
 }
 
 # ==============================================================================
-# 2. LISTA DE RESTAURANTES CONOCIDOS DE PASTO
+# 3. DIRECTORIO GASTRONÓMICO Y PUNTOS DE INTERÉS DE PASTO
 # ==============================================================================
 PASTO_RESTAURANTS_DATA: List[Dict[str, Any]] = [
     {
@@ -175,171 +234,109 @@ PASTO_RESTAURANTS_DATA: List[Dict[str, Any]] = [
         "hours": "07:30 - 20:30",
         "specialty": "Empanadas de añejo y café nariñense",
         "description": "Ícono del centro histórico junto a la Plaza de Nariño. Famosas empanadas de añejo crocantes con pipián, ají y café."
-    },
-    {
-        "name": "Parrilla Gourmet",
-        "sector": "Carrera 27 - Senda",
-        "latitude": 1.2125,
-        "longitude": -77.2770,
-        "hours": "12:00 - 22:00",
-        "specialty": "Carnes a la brasa y almuerzos",
-        "description": "Cortes seleccionados a la parrilla, almuerzos ejecutivos y vista directa al paso de los desfiles."
-    },
-    {
-        "name": "Asadero La Merced",
-        "sector": "Salida Obonuco",
-        "latitude": 1.1890,
-        "longitude": -77.2920,
-        "hours": "10:30 - 18:00",
-        "specialty": "Cuy campesino y platos autóctonos",
-        "description": "Ambiente campestre en la ruta tradicional hacia Obonuco. Cuy entero asado, envueltos y chicha tradicional."
     }
 ]
 
-# Mapa rápido para georreferenciación de rutas
-KNOWN_LOCATIONS: Dict[str, Tuple[str, List[float]]] = {
-    "cuyquer": ("Cuyquer en Mijitayo", [1.2160, -77.2915]),
-    "rincon del cuy": ("El Rincón del Cuy", [1.2140, -77.2870]),
-    "el rincon del cuy": ("El Rincón del Cuy", [1.2140, -77.2870]),
-    "rincón del cuy": ("El Rincón del Cuy", [1.2140, -77.2870]),
-    "el rincón del cuy": ("El Rincón del Cuy", [1.2140, -77.2870]),
-    "cafe san sebastian": ("Café San Sebastián en Centro", [1.2142, -77.2795]),
-    "café san sebastián": ("Café San Sebastián en Centro", [1.2142, -77.2795]),
-    "san sebastian": ("Café San Sebastián en Centro", [1.2142, -77.2795]),
-    "san sebastián": ("Café San Sebastián en Centro", [1.2142, -77.2795]),
-    "la cabaña andina": ("La Cabaña Andina en Plaza Nariño", [1.2145, -77.2780]),
-    "cabaña andina": ("La Cabaña Andina en Plaza Nariño", [1.2145, -77.2780]),
-    "la cabana andina": ("La Cabaña Andina en Plaza Nariño", [1.2145, -77.2780]),
-    "cabana andina": ("La Cabaña Andina en Plaza Nariño", [1.2145, -77.2780]),
-    "plaza de nariño": ("Plaza de Nariño", [1.2145, -77.2780]),
-    "plaza nariño": ("Plaza de Nariño", [1.2145, -77.2780]),
-    "plaza de narino": ("Plaza de Nariño", [1.2145, -77.2780]),
-    "plaza narino": ("Plaza de Nariño", [1.2145, -77.2780]),
-    "plaza del carnaval": ("Plaza del Carnaval y la Cultura", [1.2115, -77.2765]),
-    "el colorado": ("El Colorado (Cra 23)", [1.2150, -77.2820]),
-    "obonuco": ("Corregimiento de Obonuco", [1.1890, -77.2920]),
-    "catambuco": ("Corregimiento de Catambuco", [1.1710, -77.2850]),
-    "champagnat": ("Sector Champagnat", [1.2190, -77.2740]),
-    "normal superior": ("Escuela Normal Superior", [1.2050, -77.2830]),
+# Mapa para georreferenciación rápida
+KNOWN_LOCATIONS: Dict[str, Tuple[str, List[float], Dict[str, Any]]] = {
+    # Hitos Senda
+    "normal superior": ("Escuela Normal Superior (Salida)", [1.2050, -77.2830], {"center": [1.2050, -77.2830], "zoom": 17.0, "pitch": 50.0, "bearing": 20.0}),
+    "escuela normal": ("Escuela Normal Superior (Salida)", [1.2050, -77.2830], {"center": [1.2050, -77.2830], "zoom": 17.0, "pitch": 50.0, "bearing": 20.0}),
+    "carrera 27": ("Carrera 27 (La Senda)", [1.2125, -77.2770], {"center": [1.2125, -77.2770], "zoom": 16.5, "pitch": 55.0, "bearing": 35.0}),
+    "cra 27": ("Carrera 27 (La Senda)", [1.2125, -77.2770], {"center": [1.2125, -77.2770], "zoom": 16.5, "pitch": 55.0, "bearing": 35.0}),
+    "senda": ("Carrera 27 (La Senda del Carnaval)", [1.2125, -77.2770], {"center": [1.2125, -77.2770], "zoom": 16.5, "pitch": 55.0, "bearing": 35.0}),
+    "plaza del carnaval": ("Plaza del Carnaval y la Cultura", [1.2115, -77.2765], {"center": [1.2115, -77.2765], "zoom": 17.5, "pitch": 45.0, "bearing": 0.0}),
+    "champagnat": ("Sector Champagnat (Llegada)", [1.2190, -77.2740], {"center": [1.2190, -77.2740], "zoom": 16.8, "pitch": 45.0, "bearing": 330.0}),
+    "plaza de nariño": ("Plaza de Nariño", [1.2145, -77.2780], {"center": [1.2145, -77.2780], "zoom": 17.0, "pitch": 40.0, "bearing": 0.0}),
+    "plaza nariño": ("Plaza de Nariño", [1.2145, -77.2780], {"center": [1.2145, -77.2780], "zoom": 17.0, "pitch": 40.0, "bearing": 0.0}),
+    # Primeros Auxilios / Salud
+    "primeros auxilios": ("PMU Plaza del Carnaval (Cruz Roja)", [1.2118, -77.2760], {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0}),
+    "puesto de salud": ("PMU Plaza del Carnaval (Cruz Roja)", [1.2118, -77.2760], {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0}),
+    "ambulancia": ("PMU Plaza del Carnaval", [1.2118, -77.2760], {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0}),
+    "cruz roja": ("PMU Plaza del Carnaval (Cruz Roja)", [1.2118, -77.2760], {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0}),
+    "defensa civil": ("PMU Plaza del Carnaval", [1.2118, -77.2760], {"center": [1.2118, -77.2760], "zoom": 18.0, "pitch": 40.0, "bearing": 10.0}),
+    "hospital": ("Hospital Universitario San Pedro", [1.2220, -77.2790], {"center": [1.2220, -77.2790], "zoom": 16.5, "pitch": 30.0, "bearing": 0.0}),
+    # Restaurantes
+    "cuyquer": ("Restaurante Cuyquer", [1.2160, -77.2915], {"center": [1.2160, -77.2915], "zoom": 17.0, "pitch": 40.0, "bearing": 0.0}),
+    "rincon del cuy": ("El Rincón del Cuy", [1.2140, -77.2870], {"center": [1.2140, -77.2870], "zoom": 17.0, "pitch": 40.0, "bearing": 0.0}),
+    "el rincon del cuy": ("El Rincón del Cuy", [1.2140, -77.2870], {"center": [1.2140, -77.2870], "zoom": 17.0, "pitch": 40.0, "bearing": 0.0}),
+    "cafe san sebastian": ("Café San Sebastián", [1.2142, -77.2795], {"center": [1.2142, -77.2795], "zoom": 17.5, "pitch": 45.0, "bearing": 0.0}),
+    "la cabaña andina": ("La Cabaña Andina", [1.2145, -77.2780], {"center": [1.2145, -77.2780], "zoom": 17.5, "pitch": 45.0, "bearing": 0.0}),
 }
 
 # ==============================================================================
-# 3. ESQUEMA PYDANTIC PARA RESPUESTA ESTRUCTURADA DE GEMINI
+# 4. ESQUEMAS PYDANTIC PARA SALIDA ESTRUCTURADA CON VISTAS DE CÁMARA
 # ==============================================================================
+class CameraViewPayload(BaseModel):
+    """Parámetros de vista de cámara para el mapa interactivo (3D Mapbox/Leaflet)."""
+    center: List[float] = Field(description="Coordenadas [latitud, longitud] del foco")
+    zoom: float = Field(default=16.5, description="Nivel de zoom del mapa (14 a 18)")
+    pitch: Optional[float] = Field(default=45.0, description="Inclinación 3D en grados")
+    bearing: Optional[float] = Field(default=0.0, description="Rotación o rumbo del mapa")
+
+
 class ActionPayload(BaseModel):
-    """Acción de control para el mapa interactivo (SET_DAY o ROUTE)."""
-    type: str = Field(description="Tipo de acción: 'SET_DAY' o 'ROUTE'")
-    # Campos para acción SET_DAY (control dinámico del mapa por fecha)
-    day_key: Optional[str] = Field(
-        default=None,
-        description="Clave del día del carnaval: '28-dic', '31-dic', '02-ene', '03-ene', '04-ene', '05-ene', '06-ene', '07-ene'"
-    )
-    event_title: Optional[str] = Field(
-        default=None,
-        description="Título descriptivo del evento o desfile oficial"
-    )
-    # Campos para acción ROUTE (navegación a pie hacia un sitio)
-    target_name: Optional[str] = Field(
-        default=None,
-        description="Nombre del sitio o restaurante de destino"
-    )
-    target_coords: Optional[List[float]] = Field(
-        default=None,
-        description="Coordenadas [latitud, longitud] del destino"
-    )
+    """Acción estructurada para control del mapa interactivo en frontend."""
+    type: str = Field(description="Tipo de acción: 'SET_DAY', 'ROUTE', 'CAMERA_VIEW'")
+    day_key: Optional[str] = Field(default=None, description="Clave de día: '28-dic', '02-ene', '03-ene', '04-ene', '05-ene', '06-ene', '07-ene'")
+    event_title: Optional[str] = Field(default=None, description="Título del evento del día")
+    target_name: Optional[str] = Field(default=None, description="Nombre del destino o hito")
+    target_coords: Optional[List[float]] = Field(default=None, description="Coordenadas sugeridas [lat, lng]")
+    camera_view: Optional[CameraViewPayload] = Field(default=None, description="Ajuste de cámara 3D sugerido")
 
 
 class StructuredChatResponse(BaseModel):
-    """Esquema JSON obligatorio que retorna el modelo de Gemini."""
-    reply: str = Field(..., description="Texto festivo nariñense respondiendo la duda exacta.")
-    action: Optional[ActionPayload] = Field(
-        default=None,
-        description="Objeto de acción si el usuario consulta una fecha del Carnaval ('SET_DAY') o pide ruta ('ROUTE'), o null si no aplica."
-    )
+    """Respuesta estructurada de GuaneñaBot."""
+    reply: str = Field(..., description="Respuesta conversacional con calidez pastusa ('¡Que viva Pasto, Carajo!').")
+    action: Optional[ActionPayload] = Field(default=None, description="Acción interactiva de mapa con coordenadas y cámara si aplica.")
 
 
 # ==============================================================================
-# 4. CONSTRUCTOR DE SYSTEM PROMPT DINÁMICO
+# 5. SYSTEM PROMPT CULTURAL DE GUANEÑABOT
 # ==============================================================================
-def build_dynamic_system_prompt(selected_day: Optional[str] = None) -> str:
-    """Construye las instrucciones de sistema dinámicas para Gemini:
+GUANENA_BOT_SYSTEM_PROMPT = """Eres GUANEÑABOT, el Asistente Virtual Oficial con Inteligencia Artificial del Carnaval de Negros y Blancos de San Juan de Pasto, Patrimonio Cultural Inmaterial de la Humanidad por la UNESCO.
 
-    - Sin textos fijos que obliguen a responder sobre el 5 de enero.
-    - Base de datos cultural completa (28 Dic a 07 Ene).
-    - Lista de restaurantes conocidos de Pasto con coordenadas.
-    - Estricto formato de respuesta JSON estructurado: { "reply": "...", "action": null / ROUTE }.
-    """
-    context_day_instruction = (
-        f"El usuario tiene actualmente seleccionado en el mapa de la app el día '{selected_day}'. "
-        "Si pregunta de forma abierta ('¿qué hay hoy?', '¿qué desfile hay ahora?'), utiliza este día como referencia. "
-        "Si el usuario pregunta por otra fecha o realiza una pregunta gastronómica, de salud o general, "
-        "responde directamente a su consulta sin forzar el día seleccionado."
-        if selected_day
-        else "No hay ningún día fijado por defecto. Responde dinámicamente según la duda concreta del usuario sin asumir una fecha fija."
-    )
+1. PERSONALIDAD Y TONO:
+- Irradias calidez pastusa, hospitalidad sincera, orgullo cultural y entusiasmo festivo.
+- Cierras o enfatizas tus mensajes con el célebre grito festivo: "¡Que viva Pasto, Carajo!".
+- Utilizas de forma natural y respetuosa expresiones autóctonas nariñenses: "paisano", "guagua" (niño), "a la orden", "¡caray!", "achichucas", celebrando la música de La Guaneña.
 
-    return f"""Eres el Asistente Virtual Oficial con Inteligencia Artificial del Carnaval de Negros y Blancos de San Juan de Pasto, declarado Patrimonio Cultural Inmaterial de la Humanidad por la UNESCO.
-Tu misión principal es orientar, acompañar, informar y salvaguardar a propios y turistas con información precisa, contextualizada y en tiempo real.
+2. CONOCIMIENTO EXACTO DEL CARNAVAL DE PASTO:
+- 28 de Diciembre: Arcoíris en el Asfalto (El Colorado, Cra 23 entre Calles 14 y 15). Celebración ecológica, arte con tiza sobre el pavimento por la paz y el agua.
+- 31 de Diciembre: Desfile de Años Viejos y Viudas (Humor, sátira política, testamentos y quema de monigotes).
+- 02 de Enero: Carnavalito (El semillero infantil con mini-carrozas y homenaje a la Virgen de las Mercedes).
+- 03 de Enero: Canto a la Tierra (Desfile de Colectivos Coreográficos, miles de músicos y danzantes andinos con zampoñas, quenas y bombos por la Cra 27).
+- 04 de Enero: Llegada de la Familia Castañeda (Teatro callejero, carretas de época conmemorando la comitiva de 1929; centro histórico 100% peatonalizado).
+- 05 de Enero: Día de Negros (Juego fraternal de cosmético negro y orquestas en vivo en Plaza del Carnaval y Plaza de Nariño; sin carrozas gigantes).
+- 06 de Enero: Día de Blancos / Desfile Magno (La cumbre del Carnaval: Majestuosas Carrozas Monumentales de hasta 12m de altura, comparsas, murgas, juego con cosmético blanco, talco perfumado y carioca).
+- 07 de Enero: Festival del Cuy y la Cultura Campesina en los corregimientos de Obonuco y Catambuco.
 
-Personalidad y Tono:
-- Hospitalario, alegre, festivo, empático, protector y orgulloso de las tradiciones nariñenses ("¡Que viva Pasto, Carajo!").
-- Emplea con calidez y naturalidad expresiones nariñenses ("paisano", "guagua", "a la orden", "¡caray!").
-- Enérgico, respetuoso y fidedigno con las fechas, calles y gastronomía de Pasto.
-- DINÁMICO: Responde exactamente a lo que consulte el usuario. NO fuerces respuestas sobre un día fijo (como el 5 de enero) a menos que el usuario lo consulte explícitamente.
+3. HITOS CLAVE DE LA SENDA DEL CARNAVAL:
+- Escuela Normal Superior [1.2050, -77.2830]: Punto de salida tradicional y concentración de desfiles.
+- Carrera 27 [1.2125, -77.2770]: La Senda oficial y eje arterial por donde avanzan artistas y carrozas.
+- Plaza del Carnaval y la Cultura [1.2115, -77.2765]: Epicentro cultural, tarima principal, graderías y zona de premiación.
+- Sector Champagnat [1.2190, -77.2740]: Punto de llegada, desembarque y desconcentración de los desfiles.
 
-Directriz de Contexto Dinámico:
-{context_day_instruction}
+4. PUESTOS DE PRIMEROS AUXILIOS Y SEGURIDAD (PMUs):
+- PMU Plaza del Carnaval [1.2118, -77.2760]: Puesto central de Cruz Roja, Defensa Civil y ambulancias.
+- PMU Normal Superior [1.2055, -77.2825]: Atención médica de partida en la Senda.
+- Puesto Cra 27 con Cll 19 [1.2140, -77.2775]: Socorro rápido en el anillo central.
+- PMU Champagnat [1.2188, -77.2745]: Triaje final y desconcentración.
+- Hospital Universitario San Pedro [1.2220, -77.2790] y Hospital Infantil Los Ángeles [1.2090, -77.2880].
 
-Base de Datos Cultural del Carnaval de Pasto:
-* 28 Dic (Arcoíris en el Asfalto - El Colorado): Pintura artística con tiza sobre el asfalto, celebración por la paz y el agua en la Cra 23 entre Calles 14 y 15.
-* 31 Dic (Años Viejos - Senda Cra 27): Desfile de monigotes, viudas, humor, sátira y quema simbólica desde la Normal Superior hasta Champagnat.
-* 02 Ene (Carnavalito): Desfile infantil con mini-carrozas y comparsitas; ofrenda y devoción a la Virgen de las Mercedes.
-* 03 Ene (Canto a la Tierra): Desfile de Colectivos Coreográficos, miles de músicos y danzantes andinos con quenas, zampoñas y bombos por la Cra 27.
-* 04 Ene (Familia Castañeda): Llegada de la comitiva campesina de 1929 con teatro callejero y cuadros de época; centro histórico 100% peatonalizado.
-* 05 Ene (Día de Negros - Juego de pintica y tarimas): Juego fraterno con cosmético negro, orquestas y tarimas en Plaza del Carnaval y Plaza de Nariño; no hay desfile de carrozas monumentales.
-* 06 Ene (Día de Blancos - Desfile Magno de Carrozas): Máxima expresión artística con Carrozas Monumentales de hasta 12m, comparsas, murgas, talco perfumado y carioca a lo largo de toda la Senda.
-* 07 Ene (Festival del Cuy en Obonuco y Catambuco): Gastronomía autóctona campesina, concurso del mejor cuy, música tradicional y remate en corregimientos.
-
-Lista de Restaurantes Conocidos de Pasto:
-* Cuyquer en Mijitayo [1.2160, -77.2915]: Tradicional asadero de cuy con preparaciones ancestrales, ají de maní y papas al vapor.
-* El Rincón del Cuy [1.2140, -77.2870]: Ubicado en Av. Mijitayo / Panamericana, expertos en cuy asado al carbón en vara tradicional y frito pastuso.
-* Café San Sebastián en Centro [1.2142, -77.2795]: Ubicado en el Centro Histórico, café especial de origen nariñense de alta montaña, repostería y quimbolitos.
-* La Cabaña Andina en Plaza Nariño [1.2145, -77.2780]: Ícono junto a la Plaza de Nariño, famosas empanadas de añejo crocantes con pipián y café nariñense.
-
-Control Dinámico del Mapa y Formato de Respuesta:
-Debes responder SIEMPRE con un objeto JSON estructurado con los campos "reply" y "action":
-
-1. Si el usuario pregunta o menciona una fecha del Carnaval (ej: "28 de diciembre", "31 de diciembre", "2 de enero", "3 de enero", "4 de enero", "5 de enero", "6 de enero", "7 de enero" o nombres de desfiles como "Carrozas", "Familia Castañeda", "Años Viejos", "Canto a la Tierra", "Carnavalito"):
-   - Explica con entusiasmo y detalle qué se celebra, qué verá el turista, los horarios oficiales y los cierres viales.
-   - En el campo "action", DEBES emitir OBLIGATORIAMENTE una acción de tipo "SET_DAY" para que la app cambie automáticamente el mapa, la senda y los cierres viales:
-     {{
-       "type": "SET_DAY",
-       "day_key": "06-ene",
-       "event_title": "Día de Blancos - Desfile Magno"
-     }}
-     (Utiliza exactamente la clave correspondiente: '28-dic', '31-dic', '02-ene', '03-ene', '04-ene', '05-ene', '06-ene', '07-ene').
-
-2. Si el usuario solicita una ruta, indicaciones para llegar, cómo ir o dónde queda un restaurante o sitio específico:
-   - En el campo "action", emite una acción de tipo "ROUTE":
-     {{
-       "type": "ROUTE",
-       "target_name": "Nombre exacto del restaurante o sitio",
-       "target_coords": [latitud, longitud]
-     }}
-
-3. Si no mencionan fecha del Carnaval ni solicitan ruta hacia un punto, "action" debe ser null:
-     {{
-       "reply": "Texto festivo nariñense respondiendo la duda exacta",
-       "action": null
-     }}
+5. ACCIONES ESTRUCTURADAS DE MAPA:
+Debes generar un JSON con 'reply' y 'action':
+- Si el usuario consulta una fecha del Carnaval:
+  action: { "type": "SET_DAY", "day_key": "06-ene", "event_title": "Día de Blancos - Desfile Magno", "camera_view": { "center": [1.2115, -77.2765], "zoom": 16.5, "pitch": 45.0, "bearing": 0.0 } }
+- Si el usuario pregunta por un hito de la Senda, primeros auxilios o restaurante:
+  action: { "type": "ROUTE", "target_name": "Nombre del sitio", "target_coords": [lat, lng], "camera_view": { "center": [lat, lng], "zoom": 17.5, "pitch": 50.0, "bearing": 15.0 } }
+- Si es una charla general sin referencia geográfica ni fecha:
+  action: null
 """
 
 
-# ==============================================================================
-# 5. UTILIDADES GEOGRÁFICAS Y PARSEO
-# ==============================================================================
 def _haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calcula la distancia geodésica en kilómetros entre dos coordenadas usando Haversine."""
+    """Calcula distancia Haversine en kilómetros."""
     earth_radius_km = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -354,30 +351,15 @@ def _haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -
 
 
 def _format_distance(km: float) -> str:
-    """Formatea una distancia en metros o kilómetros para fácil lectura."""
+    """Formatea la distancia en metros o kilómetros."""
     meters = km * 1000.0
     if meters < 1000.0:
         return f"{int(round(meters))} metros"
     return f"{km:.2f} km"
 
 
-def is_restaurant_open_now(hours_str: str) -> bool:
-    """Calcula si un restaurante está abierto comparando la hora actual con su rango."""
-    try:
-        now = datetime.now()
-        cur_min = now.hour * 60 + now.minute
-        parts = hours_str.split("-")
-        if len(parts) == 2:
-            s_h, s_m = map(int, parts[0].strip().split(":"))
-            e_h, e_m = map(int, parts[1].strip().split(":"))
-            return (s_h * 60 + s_m) <= cur_min <= (e_h * 60 + e_m)
-    except Exception:
-        pass
-    return False
-
-
 def _clean_and_parse_json(text: str) -> Dict[str, Any]:
-    """Limpia bloques de código markdown y parsea un texto JSON."""
+    """Limpia markdown de código y parsea JSON."""
     cleaned = text.strip()
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
@@ -385,198 +367,48 @@ def _clean_and_parse_json(text: str) -> Dict[str, Any]:
         cleaned = cleaned[3:]
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
-    return json.loads(cleaned)
+    return json.loads(cleaned.strip())
 
 
-DAY_DETECTION_PATTERNS = [
-    ("28-dic", "28 de Diciembre - Arcoíris en el Asfalto", ["28 de dic", "28 dic", "arcoiris", "arcoíris", "colorado"]),
-    ("31-dic", "31 de Diciembre - Desfile de Años Viejos", ["31 de dic", "31 dic", "año viejo", "años viejos", "viudas"]),
-    ("02-ene", "02 de Enero - Carnavalito", ["2 de ene", "02 de ene", "2 ene", "02 ene", "carnavalito"]),
-    ("03-ene", "03 de Enero - Canto a la Tierra", ["3 de ene", "03 de ene", "3 ene", "03 ene", "canto a la tierra", "colectivos"]),
-    ("04-ene", "04 de Enero - Llegada de la Familia Castañeda", ["4 de ene", "04 de ene", "4 ene", "04 ene", "castañeda", "castaneda"]),
-    ("05-ene", "05 de Enero - Día de Negros", ["5 de ene", "05 de ene", "5 ene", "05 ene", "día de negros", "dia de negros", "juego de pintica", "pintica"]),
-    ("06-ene", "06 de Enero - Día de Blancos (Desfile Magno)", ["6 de ene", "06 de ene", "6 ene", "06 ene", "día de blancos", "dia de blancos", "desfile magno", "carrozas"]),
-    ("07-ene", "07 de Enero - Festival del Cuy y la Cultura Campesina", ["7 de ene", "07 de ene", "7 ene", "07 ene", "festival del cuy", "obonuco", "catambuco"]),
-]
+def _detect_map_action(message: str) -> Optional[Dict[str, Any]]:
+    """Detecta heurísticamente si el mensaje amerita acción de mapa con coordenadas y cámara."""
+    q = message.lower()
 
-
-def _detect_requested_day(query: str) -> Optional[Dict[str, Any]]:
-    """Detecta si la consulta del usuario hace referencia a un día del Carnaval de Pasto."""
-    q = query.lower()
-    for day_key, default_title, keywords in DAY_DETECTION_PATTERNS:
+    # Días del Carnaval
+    day_matches = [
+        ("28-dic", "28 de Diciembre - Arcoíris en el Asfalto", ["28 de dic", "28 dic", "arcoiris", "colorado"], [1.2150, -77.2820]),
+        ("31-dic", "31 de Diciembre - Desfile de Años Viejos", ["31 de dic", "31 dic", "año viejo", "viudas"], [1.2125, -77.2770]),
+        ("02-ene", "02 de Enero - Carnavalito", ["2 de ene", "02 de ene", "2 ene", "carnavalito"], [1.2050, -77.2830]),
+        ("03-ene", "03 de Enero - Canto a la Tierra", ["3 de ene", "03 de ene", "3 ene", "canto a la tierra", "colectivo"], [1.2125, -77.2770]),
+        ("04-ene", "04 de Enero - Familia Castañeda", ["4 de ene", "04 de ene", "4 ene", "castañeda", "castaneda"], [1.2145, -77.2780]),
+        ("05-ene", "05 de Enero - Día de Negros", ["5 de ene", "05 de ene", "5 ene", "día de negros", "pintica"], [1.2115, -77.2765]),
+        ("06-ene", "06 de Enero - Día de Blancos (Desfile Magno)", ["6 de ene", "06 de ene", "6 ene", "día de blancos", "carrozas", "magno"], [1.2115, -77.2765]),
+        ("07-ene", "07 de Enero - Festival del Cuy", ["7 de ene", "07 de ene", "7 ene", "festival del cuy", "obonuco"], [1.1890, -77.2920]),
+    ]
+    for day_key, title, keywords, coords in day_matches:
         if any(kw in q for kw in keywords):
-            title = CARNIVAL_SCHEDULE_DATA.get(day_key, {}).get("name", default_title)
             return {
                 "type": "SET_DAY",
                 "day_key": day_key,
-                "event_title": title
+                "event_title": title,
+                "target_name": title,
+                "target_coords": coords,
+                "camera_view": {"center": coords, "zoom": 16.5, "pitch": 45.0, "bearing": 0.0}
             }
-    return None
 
-
-def _detect_requested_route(query: str) -> Optional[Dict[str, Any]]:
-    """Detecta si la consulta del usuario pide una ruta o llegar a un destino conocido."""
-    q = query.lower()
-    wants_route = any(w in q for w in [
-        "cómo llegar", "como llegar", "cómo llego", "como llego", "llegar a", "llego a",
-        "ruta", "cómo voy", "como voy", "ir a", "guíame", "guiame",
-        "dónde queda", "donde queda", "dónde está", "donde esta", "dónde encuentro", "donde encuentro"
-    ])
-    if not wants_route:
-        return None
-
-    for key, (name, coords) in KNOWN_LOCATIONS.items():
+    # Hitos y Primeros Auxilios conocidos
+    for key, (name, coords, cam_view) in KNOWN_LOCATIONS.items():
         if key in q:
             return {
                 "type": "ROUTE",
                 "target_name": name,
-                "target_coords": coords
+                "target_coords": coords,
+                "camera_view": cam_view
             }
+
     return None
 
 
-# ==============================================================================
-# 6. CONSTRUCCIÓN DE CONTEXTO RAG
-# ==============================================================================
-def build_full_rag_context(
-    db: Optional[Session] = None,
-    user_lat: Optional[float] = None,
-    user_lon: Optional[float] = None,
-    selected_day: Optional[str] = None
-) -> Tuple[str, List[str]]:
-    """Construye el contexto integral en tiempo real:
-
-    - Cronograma oficial y cierres viales (sin forzar días estáticos).
-    - Restaurantes conocidos de Pasto con proximidad y estado abierto/cerrado.
-    - Puntos de interés y reportes ciudadanos activos desde la base de datos.
-    """
-    sources_used: List[str] = []
-    context_sections: List[str] = []
-
-    has_location = user_lat is not None and user_lon is not None
-    if has_location:
-        sources_used.append(f"Geolocalización GPS activa: Lat {user_lat:.4f}, Lon {user_lon:.4f}")
-
-    # 1. Día Seleccionado en la App (solo si fue explícitamente seleccionado)
-    if selected_day and selected_day in CARNIVAL_SCHEDULE_DATA:
-        day_info = CARNIVAL_SCHEDULE_DATA[selected_day]
-        sources_used.append(f"Agenda Oficial Carnaval: Día activo '{selected_day}' ({day_info['name']})")
-        day_text = (
-            f"DÍA ACTUALMENTE SELECCIONADO EN EL MAPA: {selected_day} - {day_info['name']}\n"
-            f"• Horario Oficial: {day_info['hours']}\n"
-            f"• Descripción: {day_info['description']}\n"
-        )
-        if "start" in day_info:
-            day_text += f"• Salida: {day_info['start']}\n"
-        if "end" in day_info:
-            day_text += f"• Llegada: {day_info['end']}\n"
-        day_text += "• Puntos de Cierre Vial activos hoy:\n"
-        for cp in day_info["closed_points"]:
-            day_text += f"  - ⛔ {cp}\n"
-        if "notes" in day_info:
-            day_text += f"• Indicación logística: {day_info['notes']}\n"
-        context_sections.append(day_text)
-
-    # 2. Resumen Completo de Todos los Días del Carnaval para RAG Dinámico
-    all_days_summary = ["BASE DE DATOS CULTURAL Y CIERRES VIALES (28 Dic - 07 Ene):"]
-    for day_id, d in CARNIVAL_SCHEDULE_DATA.items():
-        all_days_summary.append(
-            f"[{day_id}] {d['name']} ({d['hours']}): {d['description']}. "
-            f"Cierres: {', '.join(d['closed_points'])}. {d.get('notes', '')}"
-        )
-    context_sections.append("\n".join(all_days_summary))
-
-    # 3. Restaurantes Conocidos de Pasto (con cálculo de proximidad si hay GPS)
-    restaurant_entries = []
-    sorted_restaurants = []
-    for r in PASTO_RESTAURANTS_DATA:
-        dist_km = None
-        if has_location:
-            dist_km = _haversine_distance_km(user_lat, user_lon, r["latitude"], r["longitude"])
-        is_open = is_restaurant_open_now(r["hours"])
-        sorted_restaurants.append((r, dist_km, is_open))
-
-    if has_location:
-        sorted_restaurants.sort(key=lambda x: x[1] if x[1] is not None else float("inf"))
-
-    for r, dist, is_open in sorted_restaurants:
-        status_str = "🟢 ABIERTO AHORA" if is_open else "🔴 CERRADO"
-        dist_str = f" | Distancia desde tu ubicación: {_format_distance(dist)}" if dist is not None else ""
-        restaurant_entries.append(
-            f"- 🍽️ {r['name']} ({r['sector']}) [{status_str} | Horario: {r['hours']}]{dist_str}\n"
-            f"  Especialidad: {r['specialty']}. {r['description']} [Coords: {r['latitude']}, {r['longitude']}]"
-        )
-
-    context_sections.append("RESTAURANTES CONOCIDOS Y GASTRONOMÍA TRADICIONAL DE PASTO:\n" + "\n".join(restaurant_entries))
-    sources_used.append(f"Directorio Gastronómico: {len(PASTO_RESTAURANTS_DATA)} restaurantes de Pasto")
-
-    # 4. Puntos de Interés en BD (Salud, Policía, Tarimas, Baños)
-    if db is not None:
-        try:
-            pois = db.query(PointOfInterest).all()
-            if pois:
-                poi_items = []
-                for poi in pois:
-                    dist_km = None
-                    if has_location:
-                        dist_km = _haversine_distance_km(user_lat, user_lon, poi.latitude, poi.longitude)
-                    poi_items.append((poi, dist_km))
-
-                if has_location:
-                    poi_items.sort(key=lambda x: x[1] if x[1] is not None else float("inf"))
-
-                poi_entries = []
-                for poi, dist in poi_items:
-                    dist_str = f" - Distancia: {_format_distance(dist)}" if dist is not None else ""
-                    poi_entries.append(
-                        f"- [{poi.category.upper()}] {poi.name} ({poi.description or 'Servicio oficial'}){dist_str} [Coords: {poi.latitude}, {poi.longitude}]"
-                    )
-
-                context_sections.append("PUNTOS DE SALUD, SEGURIDAD Y TARIMAS:\n" + "\n".join(poi_entries))
-                sources_used.append(f"Puntos de Interés: {len(pois)} puestos de auxilio y tarimas oficiales")
-        except Exception as e:
-            logger.warning(f"Error consultando POIs en BD: {e}")
-
-        # 5. Reportes Ciudadanos y Zonas de Congestión en BD
-        try:
-            recent_reports = (
-                db.query(Report)
-                .filter(Report.status.in_(["Pendiente", "En_Revision", "Atendido"]))
-                .order_by(Report.created_at.desc())
-                .limit(6)
-                .all()
-            )
-            if recent_reports:
-                report_entries = []
-                for rep in recent_reports:
-                    dist_str = ""
-                    if has_location:
-                        dist = _haversine_distance_km(user_lat, user_lon, rep.latitude, rep.longitude)
-                        dist_str = f" (a {_format_distance(dist)})"
-                    report_entries.append(
-                        f"- [{rep.category} | Riesgo: {rep.ai_risk_level}] \"{rep.title}\"{dist_str}: {rep.description or ''}"
-                    )
-                context_sections.append("INCIDENCIAS Y REPORTES CIUDADANOS EN LA SENDA:\n" + "\n".join(report_entries))
-                sources_used.append(f"Monitoreo Ciudadano: {len(recent_reports)} reportes en vivo")
-
-            zone_risks = db.query(ZoneRisk).all()
-            if zone_risks:
-                zone_entries = [
-                    f"- {zr.zone_name}: Riesgo {zr.risk_level} | Congestión {zr.congestion_percentage}%"
-                    for zr in zone_risks
-                ]
-                context_sections.append("ESTADO DE ZONAS Y AGLOMERACIÓN:\n" + "\n".join(zone_entries))
-        except Exception as e:
-            logger.warning(f"Error consultando reportes/zonas en BD: {e}")
-
-    full_context = "\n\n".join(context_sections)
-    return full_context, sources_used
-
-
-# ==============================================================================
-# 7. GENERADOR HEURÍSTICO DE RESPALDO (FALLBACK ESTRUCTURADO)
-# ==============================================================================
 def _generate_smart_fallback(
     message: str,
     user_lat: Optional[float],
@@ -585,181 +417,143 @@ def _generate_smart_fallback(
     context_text: str,
     sources_used: List[str]
 ) -> ChatResponse:
-    """Generador heurístico de respaldo que retorna exactamente el formato estructurado
-
-    {"reply": "...", "action": null / ROUTE} cuando no hay conexión con Gemini.
-    """
-    has_location = user_lat is not None and user_lon is not None
+    """Generador heurístico de GuaneñaBot con calidez pastusa y acciones de mapa."""
     q = message.lower()
+    has_location = user_lat is not None and user_lon is not None
+    action = _detect_map_action(message)
 
-    # 1. Detectar si piden ruta explícita hacia algún destino conocido
-    route_action = _detect_requested_route(message)
-    if route_action:
-        dest_name = route_action["target_name"]
-        dest_coords = route_action["target_coords"]
-        dist_info = ""
+    # 1. Puestos de Primeros Auxilios / Salud
+    if any(k in q for k in ["primeros auxilios", "salud", "médico", "medico", "ambulancia", "cruz roja", "emergencia", "herido", "desmayo"]):
+        pmu = CARNIVAL_LANDMARKS_DATA["pmu_plaza_carnaval"]
+        dist_str = ""
         if has_location:
-            dist = _haversine_distance_km(user_lat, user_lon, dest_coords[0], dest_coords[1])
-            dist_info = f" Te encuentras a aproximadamente {_format_distance(dist)} de distancia."
+            dist = _haversine_distance_km(user_lat, user_lon, pmu["coords"][0], pmu["coords"][1])
+            dist_str = f" Te encuentras a unos {_format_distance(dist)} del punto de socorro principal."
         reply = (
-            f"¡Con el mayor de los gustos, paisano! Te indico la orientación hacia **{dest_name}**.{dist_info}\n\n"
-            f"📍 **Destino:** {dest_name}\n"
-            f"🗺️ **Coordenadas:** [{dest_coords[0]}, {dest_coords[1]}].\n\n"
-            "🧭 Se ha activado la acción de navegación en tu mapa interactivo para que sigas el trayecto. ¡Que viva Pasto, Carajo!"
+            f"¡Tranquilo, paisano! La red de socorro y primeros auxilios está 100% activa.{dist_str}\n\n"
+            f"🏥 **Puesto Principal:** {pmu['name']}\n"
+            f"📍 **Ubicación:** Plaza del Carnaval y la Cultura [Coords: {pmu['coords'][0]}, {pmu['coords'][1]}]\n"
+            "🚑 **Recursos en sitio:** Carpas de triaje, personal de la Cruz Roja, Defensa Civil y ambulancias medicalizadas.\n\n"
+            "Otros puntos de auxilio en la Senda:\n"
+            "- PMU Normal Superior (Punto de Salida)\n"
+            "- Puesto Carrera 27 con Calle 19 (Sector Plaza de Nariño)\n"
+            "- PMU Sector Champagnat (Punto de Llegada)\n\n"
+            "🧭 Se ha activado la vista de cámara y coordenadas en tu mapa interactivo para orientarte de inmediato. ¡Cuídate mucho, paisano! ¡Que viva Pasto, Carajo!"
         )
-        return ChatResponse(response=reply, reply=reply, action=route_action, sources_used=sources_used)
+        act = action or {
+            "type": "ROUTE",
+            "target_name": pmu["name"],
+            "target_coords": pmu["coords"],
+            "camera_view": pmu["camera_view"]
+        }
+        return ChatResponse(response=reply, reply=reply, action=act, sources_used=sources_used)
 
-    # 2. Respuestas según temática dinámica:
-    # A. 28 de Diciembre - Arcoíris en el Asfalto
-    if "28 de dic" in q or "28 dic" in q or "arcoiris" in q or "arcoíris" in q or "colorado" in q or (("hoy" in q or "qué hay" in q) and selected_day == "28-dic"):
+    # 2. Hitos de la Senda (Normal Superior, Cra 27, Plaza del Carnaval, Champagnat)
+    if any(k in q for k in ["senda", "ruta del desfile", "normal superior", "carrera 27", "plaza del carnaval", "champagnat", "recorrido"]):
+        reply = (
+            "¡Qué viva la Senda del Carnaval, paisano! 🎉 El recorrido oficial consta de 7 km de pura magia y color andino:\n\n"
+            "1. 🏁 **Punto de Salida:** Escuela Normal Superior de Pasto [Coords: 1.2050, -77.2830]. Concentración de artistas y carrozas.\n"
+            "2. 🎺 **Eje Central:** La emblemática Carrera 27 [Coords: 1.2125, -77.2770], donde vibra la música y la danza.\n"
+            "3. 👑 **Epicentro:** Plaza del Carnaval y la Cultura [Coords: 1.2115, -77.2765], zona de tarima oficial y graderías.\n"
+            "4. 🏁 **Punto de Llegada:** Sector Champagnat / IEM Ciudad de Pasto [Coords: 1.2190, -77.2740], desconcentración y desembarque.\n\n"
+            "🧭 ¡He enfocado la cámara de tu mapa sobre la Senda para que la aprecies en vista 3D! ¡Que viva Pasto, Carajo!"
+        )
+        act = action or {
+            "type": "CAMERA_VIEW",
+            "target_name": "La Senda del Carnaval",
+            "target_coords": [1.2125, -77.2770],
+            "camera_view": {"center": [1.2125, -77.2770], "zoom": 16.5, "pitch": 55.0, "bearing": 35.0}
+        }
+        return ChatResponse(response=reply, reply=reply, action=act, sources_used=sources_used)
+
+    # 3. 28 de Diciembre - Arcoíris en el Asfalto
+    if "28" in q or "arcoiris" in q or "colorado" in q:
         d = CARNIVAL_SCHEDULE_DATA["28-dic"]
         reply = (
-            f"¡Hola, paisano! 🎉 El **28 de diciembre** celebramos **{d['name']}** ({d['hours']}).\n\n"
+            f"¡Hola, paisano! 🎉 El **28 de diciembre** vivimos el **{d['name']}** ({d['hours']}).\n\n"
             f"🎨 {d['description']}\n"
-            f"📍 Sector El Colorado (Cra 23 entre Calles 14 y 15).\n"
-            f"⛔ Cierres viales: {', '.join(d['closed_points'])}.\n\n"
-            "¡Una jornada cultural de arte efímero y amor por el agua! ¡Que viva Pasto, Carajo!"
+            "📍 Sector El Colorado (Cra 23 entre Calles 14 y 15).\n"
+            "⛔ Cierres viales: Vía cerrada para pintar con tiza y celebrar el cuidado del agua.\n\n"
+            "¡Una fiesta de arte efímero que enamora a propios y turistas! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "28-dic", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # B. 31 de Diciembre - Años Viejos
-    if "31 de dic" in q or "31 dic" in q or "año viejo" in q or "años viejos" in q or "viudas" in q or (("hoy" in q or "qué hay" in q) and selected_day == "31-dic"):
-        d = CARNIVAL_SCHEDULE_DATA["31-dic"]
-        reply = (
-            f"¡Paisano, el **31 de diciembre** es el tradicional **{d['name']}** ({d['hours']})! 🎭\n\n"
-            f"• {d['description']}\n"
-            f"• **Recorrido:** Desde {d['start']} hasta {d['end']} por toda la Carrera 27.\n"
-            f"• **Cierres viales:** {', '.join(d['closed_points'])}.\n\n"
-            "¡El humor, la sátira política y la creatividad de los pastusos despidiendo el año!"
-        )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "31-dic", "event_title": d["name"]}
-        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
-
-    # C. 02 de Enero - Carnavalito
-    if "2 de ene" in q or "02 de ene" in q or "2 ene" in q or "02 ene" in q or "carnavalito" in q or (("hoy" in q or "qué hay" in q) and selected_day == "02-ene"):
+    # 4. 02 de Enero - Carnavalito
+    if "2 de ene" in q or "02 de ene" in q or "carnavalito" in q:
         d = CARNIVAL_SCHEDULE_DATA["02-ene"]
         reply = (
-            f"¡Qué alegría, paisano! El **02 de enero** se vive el semillero del Carnaval con el **{d['name']}** ({d['hours']}). 👧🧒\n\n"
+            f"¡Qué emoción, paisano! El **02 de enero** es el semillero de nuestra tradición: el **{d['name']}** ({d['hours']}). 👧🧒\n\n"
             f"• {d['description']}\n"
-            f"• **Recorrido:** {d['start']} a {d['end']} por la Cra 27.\n"
-            f"• **Cierres viales:** {', '.join(d['closed_points'])}.\n\n"
-            "Te recomendamos acordar un punto de encuentro fijo y cuidar con cariño a los guaguas (niños)."
+            "• **Ruta de la Senda:** Desde la Normal Superior hasta el Sector Champagnat por toda la Carrera 27.\n"
+            "• **Recomendación:** Acuerda un punto de encuentro fijo y protege con amor a los guaguas.\n\n"
+            "¡La ternura y el talento infantil en nuestra fiesta grande! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "02-ene", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # D. 03 de Enero - Canto a la Tierra
-    if "3 de ene" in q or "03 de ene" in q or "3 ene" in q or "03 ene" in q or "canto a la tierra" in q or "colectivos" in q or (("hoy" in q or "qué hay" in q) and selected_day == "03-ene"):
+    # 5. 03 de Enero - Canto a la Tierra
+    if "3 de ene" in q or "03 de ene" in q or "canto a la tierra" in q or "colectivo" in q:
         d = CARNIVAL_SCHEDULE_DATA["03-ene"]
         reply = (
-            f"¡Paisano! El **03 de enero** resuena la fuerza andina con el desfile **{d['name']}** ({d['hours']}). 🎶🥁\n\n"
+            f"¡Paisano querido! El **03 de enero** retumba el suelo con **{d['name']}** ({d['hours']}). 🎶🥁\n\n"
             f"• {d['description']}\n"
-            f"• **Recorrido:** Por la Carrera 27 hasta Champagnat.\n"
-            f"• **Cierres viales:** {', '.join(d['closed_points'])}.\n\n"
-            "¡Miles de zampoñas y bombos honrando a la Madre Tierra! ¡Que viva Nariño!"
+            "• **Hito Senda:** Recorrido por la Carrera 27 desde la Normal Superior hasta Champagnat.\n"
+            "• **Música:** Zampoñas, bombos andinos y coreografías majestuosas honrando a la Pacha Mama.\n\n"
+            "¡Un río sonoro de hermandad y orgullo nariñense! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "03-ene", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # E. 04 de Enero - Familia Castañeda
-    if "4 de ene" in q or "04 de ene" in q or "4 ene" in q or "04 ene" in q or "castañeda" in q or (("hoy" in q or "qué hay" in q) and selected_day == "04-ene"):
+    # 6. 04 de Enero - Familia Castañeda
+    if "4 de ene" in q or "04 de ene" in q or "castañeda" in q or "castaneda" in q:
         d = CARNIVAL_SCHEDULE_DATA["04-ene"]
         reply = (
-            f"¡A la orden, paisano! El **04 de enero** vivimos la **{d['name']}** ({d['hours']}). 🤠🎉\n\n"
+            f"¡A la orden, paisano! El **04 de enero** celebramos la **{d['name']}** ({d['hours']}). 🤠🎉\n\n"
             f"• {d['description']}\n"
-            f"• **Recorrido:** Normal Superior hacia Sector Champagnat por la Carrera 27.\n"
-            f"• **Cierres Viales:** {', '.join(d['closed_points'])}.\n"
-            f"⚠️ **Aviso:** ¡El centro histórico y la Plaza de Nariño quedan 100% peatonalizados!"
+            "• **Recorrido:** Normal Superior hacia Champagnat.\n"
+            "⚠️ **Aviso vial:** ¡El centro histórico y la Plaza de Nariño quedan 100% peatonalizados!\n\n"
+            "¡Bienvenidos todos los forasteros a gozar de nuestra tierra! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "04-ene", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # F. 05 de Enero - Día de Negros
-    if "5 de ene" in q or "05 de ene" in q or "5 ene" in q or "05 ene" in q or "negros" in q or "pintica" in q or (("hoy" in q or "qué hay" in q) and selected_day == "05-ene"):
+    # 7. 05 de Enero - Día de Negros
+    if "5 de ene" in q or "05 de ene" in q or "negros" in q or "pintica" in q:
         d = CARNIVAL_SCHEDULE_DATA["05-ene"]
         reply = (
-            f"¡Una pintica por la paz, paisano! El **05 de enero** es el **{d['name']}** ({d['hours']}). 🖤✨\n\n"
+            f"¡Una pintica por la paz, paisano! El **05 de enero** celebramos el **{d['name']}** ({d['hours']}). 🖤✨\n\n"
             f"• {d['description']}\n"
-            f"• **Tarimas principales:** Plaza del Carnaval y Plaza de Nariño con orquestas en vivo.\n"
-            f"• **Nota importante:** En este día no hay desfile de carrozas; las plazas son puntos de juego y encuentro.\n"
-            f"• **Zonas peatonales:** {', '.join(d['closed_points'])}."
+            "• **Tarimas principales:** Plaza del Carnaval y Plaza de Nariño con orquestas en vivo.\n"
+            "• **Recordatorio clave:** En este día no hay desfile de carrozas; las plazas son puntos fraternos de encuentro.\n\n"
+            "¡El juego con cosmético negro que nos hermana a todos por igual! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "05-ene", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # G. 06 de Enero - Día de Blancos / Desfile Magno
-    if "6 de ene" in q or "06 de ene" in q or "6 ene" in q or "06 ene" in q or "blancos" in q or "desfile magno" in q or "carrozas" in q or (("hoy" in q or "qué hay" in q) and selected_day == "06-ene"):
+    # 8. 06 de Enero - Día de Blancos / Desfile Magno
+    if "6 de ene" in q or "06 de ene" in q or "blancos" in q or "carrozas" in q or "desfile magno" in q:
         d = CARNIVAL_SCHEDULE_DATA["06-ene"]
         reply = (
-            f"¡La cumbre del Carnaval, paisano! El **06 de enero** es el majestuoso **{d['name']}** ({d['hours']}). 🎭👑\n\n"
+            f"¡La cumbre monumental de nuestra cultura, paisano! El **06 de enero** es el **{d['name']}** ({d['hours']}). 🎭👑\n\n"
             f"• {d['description']}\n"
-            f"• **Ruta:** {d['start']} hasta {d['end']} (~7 km de recorrido).\n"
-            f"• **Cierres viales:** {', '.join(d['closed_points'])}.\n\n"
-            "¡Usa gafas de protección para el talco y la carioca, y disfruta de las monumentales obras de nuestros artesanos!"
+            "• **Recorrido:** Normal Superior (Salida) -> Cra 27 -> Plaza del Carnaval -> Champagnat (Llegada).\n"
+            "• **Consejo de seguridad:** Usa gafas protectoras para el talco perfumado y la carioca.\n\n"
+            "¡Nuestros artesanos son los mejores escultores del mundo! ¡Que viva Pasto, Carajo!"
         )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "06-ene", "event_title": d["name"]}
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # H. 07 de Enero - Festival del Cuy
-    if "7 de ene" in q or "07 de ene" in q or "7 ene" in q or "07 ene" in q or "obonuco" in q or "catambuco" in q or (("hoy" in q or "qué hay" in q) and selected_day == "07-ene"):
-        d = CARNIVAL_SCHEDULE_DATA["07-ene"]
-        reply = (
-            f"¡El delicioso remate del Carnaval, paisano! El **07 de enero** celebramos el **{d['name']}** ({d['hours']}). 🍽️🎶\n\n"
-            f"• {d['description']}\n"
-            f"• **Lugares:** Corregimientos de Obonuco y Catambuco.\n"
-            f"• **Vías urbanas:** {', '.join(d['closed_points'])}. La ciudad se despeja y la fiesta se traslada al campo.\n\n"
-            "¡El mejor cuy asado en vara con papas pastusas y ají de maní te espera!"
-        )
-        action = route_action if route_action else {"type": "SET_DAY", "day_key": "07-ene", "event_title": d["name"]}
-        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
-
-    # I. Consulta sobre Comida, Restaurantes o Cuy
-    if any(k in q for k in ["comida", "restaurante", "cuy", "empanada", "almorzar", "cenar", "comer", "hambre", "café", "cafe"]):
-        rest_lines = []
-        for r in PASTO_RESTAURANTS_DATA:
-            is_open = is_restaurant_open_now(r["hours"])
-            st = "🟢 Abierto Ahora" if is_open else "🔴 Cerrado"
-            dist_str = ""
-            if has_location:
-                d = _haversine_distance_km(user_lat, user_lon, r["latitude"], r["longitude"])
-                dist_str = f" *(a {_format_distance(d)})*"
-            rest_lines.append(f"• **{r['name']}** ({r['sector']}){dist_str} — {st}\n  *Especialidad:* {r['specialty']} ({r['hours']}) [Coords: {r['latitude']}, {r['longitude']}]")
-
-        reply = (
-            "¡A la orden, paisano! En San Juan de Pasto la gastronomía es un orgullo. 🍽️✨\n\n"
-            "Te recomiendo los 4 restaurantes más tradicionales de la ciudad:\n"
-            "1. **Cuyquer** en Mijitayo [1.2160, -77.2915]: Cuy asado tradicional.\n"
-            "2. **El Rincón del Cuy** en Av. Mijitayo / Panamericana [1.2140, -77.2870]: Cuy asado al carbón en vara.\n"
-            "3. **Café San Sebastián** en Centro [1.2142, -77.2795]: Café especial nariñense de origen.\n"
-            "4. **La Cabaña Andina** en Plaza Nariño [1.2145, -77.2780]: Crujientes empanadas de añejo con pipián.\n\n"
-            "Detalle de estado actual:\n" + "\n".join(rest_lines) +
-            "\n\nSi deseas indicaciones de cómo llegar a alguno, ¡solo pídemelo y te trazo la ruta!"
-        )
-        return ChatResponse(response=reply, reply=reply, action=route_action, sources_used=sources_used)
-
-    # J. Respuesta General Dinámica
-    active_day_note = ""
-    if selected_day and selected_day in CARNIVAL_SCHEDULE_DATA:
-        d = CARNIVAL_SCHEDULE_DATA[selected_day]
-        active_day_note = f"\n\n📅 **Actualmente tienes seleccionado en el mapa:** {selected_day} - {d['name']} ({d['hours']})."
-
+    # 9. Respuesta general de bienvenida
     reply = (
-        "¡Hola, paisano! Te saluda tu Asistente Virtual Oficial del Carnaval de Negros y Blancos de San Juan de Pasto. 🎉\n\n"
-        "Estoy listo para orientarte con información fidedigna sobre:\n"
-        "1. **Programación Cultural:** 28 Dic (Arcoíris en el Asfalto), 31 Dic (Años Viejos), 02 Ene (Carnavalito), "
-        "03 Ene (Canto a la Tierra), 04 Ene (Familia Castañeda), 05 Ene (Día de Negros), 06 Ene (Desfile Magno) y 07 Ene (Festival del Cuy).\n"
-        "2. **Restaurantes Conocidos:** Cuyquer (Mijitayo), El Rincón del Cuy, Café San Sebastián (Centro) y La Cabaña Andina (Plaza Nariño).\n"
-        "3. **Rutas y Cierres Viales:** Te indico cómo llegar a sitios de interés y qué vías se encuentran cerradas o peatonalizadas.\n"
-        "4. **Puestos de Salud y Seguridad:** Ubicación de PMUs y CAIs de policía."
-        f"{active_day_note}\n\n"
+        "¡Bienvenido a San Juan de Pasto, paisano! Soy **GuaneñaBot**, tu guía con IA para vivir el Carnaval de Negros y Blancos al 100%. 🎉\n\n"
+        "Puedo orientarte con precisión sobre:\n"
+        "📅 **Fechas Clave:** 28 Dic (Arcoíris en el Asfalto), 02 Ene (Carnavalito), 03 Ene (Canto a la Tierra), "
+        "04 Ene (Familia Castañeda), 05 Ene (Día de Negros) y 06 Ene (Desfile Magno de Carrozas).\n"
+        "🗺️ **La Senda:** Normal Superior, Carrera 27, Plaza del Carnaval y Sector Champagnat.\n"
+        "🏥 **Puestos de Salud:** Ubicación en tiempo real de PMUs y módulos de primeros auxilios.\n"
+        "🍽️ **Gastronomía:** Los mejores asaderos de cuy tradicional y café nariñense.\n\n"
         "¿En qué te puedo colaborar en este momento? ¡Que viva Pasto, Carajo!"
     )
-    return ChatResponse(response=reply, reply=reply, action=route_action, sources_used=sources_used)
+    return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
 
 # ==============================================================================
-# 8. FUNCIÓN PRINCIPAL DE ENTRADA: generate_chat_response
+# 6. ENTRADA PRINCIPAL: generate_chat_response
 # ==============================================================================
 def generate_chat_response(
     message: str,
@@ -770,110 +564,66 @@ def generate_chat_response(
     user_lng: Optional[float] = None,
     db: Optional[Session] = None
 ) -> ChatResponse:
-    """Procesa el mensaje del usuario utilizando Google Gemini (gemini-2.5-flash)
-
-    con System Prompt dinámico, base de datos cultural del Carnaval y formato estructurado JSON.
-    """
+    """Procesa consultas con GuaneñaBot integrando contexto dinámico cultural y mapa 3D."""
     effective_lat = user_lat if user_lat is not None else user_latitude
     effective_lon = user_lng if user_lng is not None else user_longitude
 
-    # 1. Construir contexto enriquecido RAG (sin forzar días estáticos)
-    full_context, sources_used = build_full_rag_context(
-        db=db,
-        user_lat=effective_lat,
-        user_lon=effective_lon,
-        selected_day=selected_day
-    )
+    sources_used = [
+        "Base Oficial del Carnaval de Negros y Blancos de Pasto",
+        "Red de Puestos de Primeros Auxilios y Salud (PMU)",
+        "Hitos de la Senda Oficial (Cra 27, Normal Superior, Plaza del Carnaval)"
+    ]
 
-    # 2. Si no hay clave de API válida, operar con el generador heurístico estructurado
-    if (
-        not settings.GEMINI_API_KEY
-        or settings.GEMINI_API_KEY.strip() == ""
-        or settings.GEMINI_API_KEY == "tu_clave_de_gemini_aqui"
-    ):
-        logger.info("Operando Asistente Virtual con generador heurístico estructurado.")
-        return _generate_smart_fallback(
-            message=message,
-            user_lat=effective_lat,
-            user_lon=effective_lon,
-            selected_day=selected_day,
-            context_text=full_context,
-            sources_used=sources_used
-        )
+    # Si hay clave de Gemini disponible, intentar consulta al modelo generativo
+    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY not in ["", "tu_clave_de_gemini_aqui"]:
+        try:
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            location_info = (
+                f"Ubicación GPS del usuario: Latitud {effective_lat}, Longitud {effective_lon}."
+                if effective_lat and effective_lon
+                else "Ubicación del usuario: En Pasto (sin GPS activo)."
+            )
 
-    # 3. Invocar a Google Gemini 2.5 Flash con salida JSON estructurada
-    try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-
-        location_info = (
-            f"Coordenadas GPS del usuario: Latitud {effective_lat}, Longitud {effective_lon}."
-            if effective_lat is not None and effective_lon is not None
-            else "El usuario no ha suministrado coordenadas GPS en esta consulta."
-        )
-
-        user_prompt = f"""CONTEXTO EN TIEMPO REAL Y BASE DE CONOCIMIENTO (San Juan de Pasto):
-{full_context}
-
-INFORMACIÓN GEOGRÁFICA DEL USUARIO:
-{location_info}
-DÍA SELECCIONADO EN EL MAPA: {selected_day or 'Ninguno fijado (responder dinámicamente según la consulta)'}
-
-CONSULTA DEL CIUDADANO/TURISTA:
+            prompt = f"""CONSULTA DEL CIUDADANO/TURISTA:
 "{message}"
+
+CONTEXTO ADICIONAL:
+{location_info}
+Día seleccionado en frontend: {selected_day or 'Ninguno'}
 """
 
-        dynamic_system_prompt = build_dynamic_system_prompt(selected_day)
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=dynamic_system_prompt,
-                response_mime_type="application/json",
-                response_schema=StructuredChatResponse,
-                temperature=0.35,
-            )
-        )
-
-        if not response or not response.text:
-            return _generate_smart_fallback(
-                message=message,
-                user_lat=effective_lat,
-                user_lon=effective_lon,
-                selected_day=selected_day,
-                context_text=full_context,
-                sources_used=sources_used
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=GUANENA_BOT_SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=StructuredChatResponse,
+                    temperature=0.35,
+                )
             )
 
-        # Parsear respuesta JSON estructurada generada por Gemini
-        try:
-            parsed = _clean_and_parse_json(response.text)
-            reply = parsed.get("reply") or response.text.strip()
-            action = parsed.get("action")
-            if action and not isinstance(action, dict):
-                action = None
-            if not action:
-                action = _detect_requested_route(message) or _detect_requested_day(message)
-        except Exception as parse_err:
-            logger.warning(f"Error parseando JSON de Gemini ({parse_err}). Contenido: {response.text}")
-            reply = response.text.strip()
-            # En caso de fallo de parseo, verificar si el usuario pedía ruta conocida o día del carnaval
-            action = _detect_requested_route(message) or _detect_requested_day(message)
+            if response and response.text:
+                parsed = _clean_and_parse_json(response.text)
+                reply = parsed.get("reply") or response.text.strip()
+                action = parsed.get("action")
+                if not action:
+                    action = _detect_map_action(message)
+                return ChatResponse(
+                    response=reply,
+                    reply=reply,
+                    action=action,
+                    sources_used=sources_used
+                )
+        except Exception as exc:
+            logger.warning(f"Aviso en conexión con Gemini API ({exc}). Despachando con generador cultural de respaldo.")
 
-        return ChatResponse(
-            response=reply,
-            reply=reply,
-            action=action,
-            sources_used=sources_used
-        )
-
-    except Exception as e:
-        logger.error(f"Error al conectar con Gemini: {e}")
-        return _generate_smart_fallback(
-            message=message,
-            user_lat=effective_lat,
-            user_lon=effective_lon,
-            selected_day=selected_day,
-            context_text=full_context,
-            sources_used=sources_used
-        )
+    # Generador heurístico de respaldo de alta fidelidad cultural
+    return _generate_smart_fallback(
+        message=message,
+        user_lat=effective_lat,
+        user_lon=effective_lon,
+        selected_day=selected_day,
+        context_text="",
+        sources_used=sources_used
+    )
