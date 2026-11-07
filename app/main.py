@@ -3,8 +3,9 @@
 Sistema inteligente para el Carnaval de Negros y Blancos de Pasto.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
@@ -12,8 +13,11 @@ from app.core.database import Base, engine, SessionLocal
 import app.models  # noqa: F401
 # Importar script de carga inicial de datos
 from app.db.seed import seed_points_of_interest
-# Importar router unificado de la API v1
+# Importar cliente resiliente de Supabase
+from app.db.supabase import supabase_client
+# Importar router unificado de la API v1 y router de health
 from app.api.v1.api import api_router
+from app.api.health import router as health_router
 
 
 @asynccontextmanager
@@ -23,8 +27,11 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
 
     # 2. Ejecución del seeder de puntos de interés iniciales
-    with SessionLocal() as db:
-        seed_points_of_interest(db)
+    try:
+        with SessionLocal() as db:
+            seed_points_of_interest(db)
+    except Exception as exc:
+        print(f"[LIFESPAN] Advertencia al ejecutar seeder inicial: {exc}")
 
     yield
 
@@ -39,7 +46,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración de Middleware de CORS (permite cualquier origen)
+# Configuración de Middleware de CORS (permite los orígenes configurados)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -48,8 +55,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Registro unificado de routers de la API
+# Registro de routers de la API
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(health_router, prefix="/api")
 
 
 @app.get("/", tags=["General"])
@@ -61,6 +69,28 @@ async def root():
         "documentation": "/docs",
         "version": settings.VERSION
     }
+
+
+@app.get("/api/health/db", tags=["Health"], summary="Healthcheck profundo de Base de Datos Supabase")
+async def health_check_db():
+    """Sondeo rápido de conectividad hacia Supabase."""
+    health_result = supabase_client.check_connection()
+    if health_result.get("status") == "ok":
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "ok",
+                "database": "connected",
+                "provider": "supabase"
+            }
+        )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "status": "error",
+            "message": "Supabase unreachable"
+        }
+    )
 
 
 @app.get("/api/v1/health", tags=["Health"])
