@@ -552,6 +552,21 @@ def _generate_smart_fallback(
     return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
 
+def build_full_rag_context(
+    db: Optional[Session] = None,
+    user_lat: Optional[float] = None,
+    user_lon: Optional[float] = None,
+    selected_day: Optional[str] = None
+) -> Tuple[str, List[str]]:
+    """Construye contexto de respaldo RAG para compatibilidad con servicios."""
+    sources = [
+        "Base Oficial del Carnaval de Negros y Blancos de Pasto",
+        "Red de Puestos de Primeros Auxilios y Salud (PMU)",
+        "Hitos de la Senda Oficial (Cra 27, Normal Superior, Plaza del Carnaval)"
+    ]
+    return GUANENA_BOT_SYSTEM_PROMPT, sources
+
+
 # ==============================================================================
 # 6. ENTRADA PRINCIPAL: generate_chat_response
 # ==============================================================================

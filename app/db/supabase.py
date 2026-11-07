@@ -150,3 +150,4 @@ supabase_client = supabase_resilient_wrapper
 def get_supabase_client() -> ResilientSupabaseClient:
     """Función de conveniencia para inyección de dependencia o acceso directo."""
     return supabase_resilient_wrapper
+

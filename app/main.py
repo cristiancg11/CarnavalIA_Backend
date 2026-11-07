@@ -15,17 +15,21 @@ import app.models  # noqa: F401
 from app.db.seed import seed_points_of_interest
 # Importar cliente resiliente de Supabase
 from app.db.supabase import supabase_client
-# Importar router unificado de la API v1, router de health y router de reportes
+# Importar router unificado de la API v1, health, reportes y autenticación
 from app.api.v1.api import api_router
 from app.api.health import router as health_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.auth import router as auth_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida de la aplicación: crea tablas y ejecuta seeders al iniciar."""
-    # 1. Creación automática de tablas en la base de datos
-    Base.metadata.create_all(bind=engine)
+    # 1. Creación automática de tablas en la base de datos si no existen
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        print(f"[LIFESPAN] Advertencia al sincronizar metadatos: {exc}")
 
     # 2. Ejecución del seeder de puntos de interés iniciales
     try:
@@ -60,6 +64,7 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(health_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 
 
 @app.get("/", tags=["General"])

@@ -30,3 +30,4 @@ async def check_db_health():
             "message": "Supabase unreachable"
         }
     )
+

@@ -171,3 +171,4 @@ def get_report(
             detail=f"Reporte con ID {report_id} no encontrado en Supabase."
         )
     return report
+
