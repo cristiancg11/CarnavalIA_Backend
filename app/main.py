@@ -15,9 +15,10 @@ import app.models  # noqa: F401
 from app.db.seed import seed_points_of_interest
 # Importar cliente resiliente de Supabase
 from app.db.supabase import supabase_client
-# Importar router unificado de la API v1 y router de health
+# Importar router unificado de la API v1, router de health y router de reportes
 from app.api.v1.api import api_router
 from app.api.health import router as health_router
+from app.api.routes.reports import router as reports_router
 
 
 @asynccontextmanager
@@ -58,6 +59,7 @@ app.add_middleware(
 # Registro de routers de la API
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(health_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 
 
 @app.get("/", tags=["General"])
