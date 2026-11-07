@@ -12,12 +12,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 2. TABLA: USERS (Usuarios del sistema y organizadores)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    full_name VARCHAR(150),
-    is_active BOOLEAN DEFAULT TRUE NOT NULL,
-    role VARCHAR(50) DEFAULT 'ciudadano' NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'citizen' NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -56,15 +55,13 @@ CREATE TABLE IF NOT EXISTS zone_risk (
 -- 5. TABLA: REPORTS (Incidencias Ciudadanas y Reportes de Seguridad)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS reports (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(150) NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
     description TEXT,
-    category VARCHAR(50) NOT NULL, -- seguridad, primeros auxilios, extravío, tráfico, Aglomeracion, Emergencia
-    status VARCHAR(50) DEFAULT 'Pendiente' NOT NULL, -- Pendiente, En_Revision, Atendido, Descartado
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
-    ai_risk_level VARCHAR(50) DEFAULT 'Bajo',
-    user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'Pendiente' NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -150,3 +147,4 @@ INSERT INTO points_of_interest (name, description, category, latitude, longitude
 ('CAI Plaza de Nariño', 'Centro de Atención Inmediata Policía Nacional', 'Seguridad', 1.2145, -77.2780, 'shield'),
 ('Tarima Plaza del Carnaval', 'Tarima oficial de orquestas y premiación de artesanos', 'Tarima', 1.2115, -77.2765, 'music')
 ON CONFLICT DO NOTHING;
+
