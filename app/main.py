@@ -15,8 +15,9 @@ import app.models  # noqa: F401
 from app.db.seed import seed_points_of_interest
 # Importar cliente resiliente de Supabase
 from app.db.supabase import supabase_client
-# Importar router unificado de la API v1, health, reportes y autenticación
+# Importar router unificado de la API v1, health, reportes, autenticación y GuaneñaBot
 from app.api.v1.api import api_router
+from app.api.v1.chat import router as guanena_chat_router
 from app.api.health import router as health_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.auth import router as auth_router
@@ -62,6 +63,7 @@ app.add_middleware(
 
 # Registro de routers de la API
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(guanena_chat_router, prefix="/api/v1/chat")
 app.include_router(health_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
