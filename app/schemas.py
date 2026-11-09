@@ -18,6 +18,7 @@ class NearbyPlace(BaseModel):
     category: str = Field(..., description="Category: restroom, police, health, stage, restaurant, shopping, risk_zone.")
     coordinates: List[float] = Field(..., description="[latitude, longitude] geographic coordinates.")
     description: Optional[str] = Field(default="", description="Service details, triage capability, or safety warning.")
+    address: Optional[str] = Field(default="", description="Exact street address or urban reference in Pasto.")
 
 
 class CarnavalChatRequest(BaseModel):
