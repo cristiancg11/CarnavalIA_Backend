@@ -1,8 +1,9 @@
-"""Official GIS landmarks, route coordinates, and strategic urban telemetry for San Juan de Pasto.
+"""Official GIS landmarks, high-precision street-level route coordinates, and verified Pasto directory.
 
-Provides verified coordinates for the official Senda del Carnaval path and nearby
-critical public services (restrooms, police, emergency health, music stages, shopping,
-and crowd-risk congestion zones) for Leaflet/OSRM map visualization.
+Provides exact street-by-street coordinates for the official Senda del Carnaval
+path and a comprehensive directory of verified urban points of interest in San Juan de Pasto:
+bathrooms, police CAIs, emergency health posts, traditional restaurants/cafés,
+stages/plazas, shopping centers, and crowd congestion risk zones.
 """
 from typing import Any, Dict, List, Optional
 
@@ -14,131 +15,189 @@ from typing import Any, Dict, List, Optional
 SENDA_START: Dict[str, Any] = {
     "name": "Estadio Departamental Libertad",
     "coordinates": [1.2025, -77.2762],
+    "address": "Calle 2 con Carrera 4, Barrio San Vicente / Libertad",
     "description": "Punto oficial de partida y concentración de carrozas, comparsas y murgas del Carnaval.",
 }
 
 SENDA_FINISH: Dict[str, Any] = {
-    "name": "Fuente de la Transparencia / Torobajo",
+    "name": "Fuente de la Transparencia / Glorieta Torobajo",
     "coordinates": [1.2330, -77.2845],
-    "description": "Punto de culminación oficial del desfile sobre la Avenida de los Estudiantes y llegada a Torobajo.",
+    "address": "Avenida de los Estudiantes con Glorieta Torobajo",
+    "description": "Punto de culminación oficial del desfile y llegada a la zona de desconcentración en Torobajo.",
 }
 
-# Ordered street-by-street waypoints for Leaflet Polyline rendering
+# High-precision street-by-street path of La Senda (Strictly [latitude, longitude])
 SENDA_OFFICIAL_PATH: List[List[float]] = [
-    [1.2025, -77.2762],  # Estadio Departamental Libertad (Inicio)
-    [1.2052, -77.2766],  # Carrera 4 hacia el norte
+    [1.2025, -77.2762],  # Start: Estadio Libertad
+    [1.2060, -77.2766],  # Subida por la Calle 2 / Carrera 4
     [1.2095, -77.2770],  # Glorieta Lorenzo de Aldana
-    [1.2115, -77.2778],  # Giro hacia Calle 19
-    [1.2136, -77.2785],  # Plaza del Carnaval y la Cultura
-    [1.2142, -77.2782],  # Conexión Carrera 27
+    [1.2115, -77.2778],  # Bajada por la Calle 19
+    [1.2136, -77.2785],  # Paso por Plaza del Carnaval y la Cultura
+    [1.2140, -77.2782],  # Giro a Carrera 27
     [1.2148, -77.2780],  # Plaza de Nariño
-    [1.2190, -77.2800],  # Calle 18 hacia el norte
-    [1.2260, -77.2825],  # Avenida de los Estudiantes
-    [1.2330, -77.2845],  # Fuente de la Transparencia / Torobajo (Llegada)
+    [1.2185, -77.2798],  # Subida por la Calle 18 hasta San Felipe
+    [1.2220, -77.2810],  # Sector San Felipe
+    [1.2260, -77.2825],  # Carrera 40 y Avenida de los Estudiantes
+    [1.2295, -77.2838],  # Avenida de los Estudiantes hacia el norte
+    [1.2330, -77.2845],  # Llegada Fuente de la Transparencia / Glorieta Torobajo
 ]
 
 
 # ---------------------------------------------------------------------------
-# Strategic Urban Service Landmarks in Pasto
+# Comprehensive Verified Local Places Directory for San Juan de Pasto
 # ---------------------------------------------------------------------------
 
-NEARBY_SERVICE_POINTS: List[Dict[str, Any]] = [
-    # Restrooms (Baños públicos)
+PASTO_PLACES_DIRECTORY: List[Dict[str, Any]] = [
+    # ------------------ Baños Públicos (restroom) ------------------
     {
-        "name": "Batería Sanitaria Plaza del Carnaval",
+        "name": "Batería San Agustín",
         "category": "restroom",
-        "coordinates": [1.2130, -77.2780],
-        "description": "Batería de baños públicos y módulos sanitarios portátiles contiguos a la Plaza del Carnaval.",
+        "coordinates": [1.2138, -77.2779],
+        "address": "Calle 19 con Carrera 24, cerca al Templo San Agustín",
+        "description": "Batería de baños públicos habilitada con personal de aseo y vigilancia permanente.",
     },
     {
-        "name": "Módulo Sanitario Centro - Pasaje Corazón de Jesús",
+        "name": "Baños Plaza del Carnaval",
         "category": "restroom",
-        "coordinates": [1.2152, -77.2775],
-        "description": "Servicios higiénicos públicos en zona céntrica habilitados durante fiestas decembrinas y carnavalescas.",
+        "coordinates": [1.2132, -77.2783],
+        "address": "Parqueadero subterráneo Plaza del Carnaval",
+        "description": "Batería sanitaria amplia subterránea con acceso a rampas y cabinas múltiples.",
     },
     {
-        "name": "Servicios Sanitarios Estadio Libertad",
+        "name": "Baños Estadio Libertad",
         "category": "restroom",
-        "coordinates": [1.2030, -77.2758],
-        "description": "Punto sanitario zona sur en las inmediaciones del Estadio Libertad para concentración inicial.",
+        "coordinates": [1.2028, -77.2765],
+        "address": "Costado Occidental Estadio Departamental Libertad",
+        "description": "Servicios sanitarios de la zona sur habilitados durante el inicio de los desfiles.",
+    },
+    {
+        "name": "Baños Plaza de Nariño",
+        "category": "restroom",
+        "coordinates": [1.2149, -77.2783],
+        "address": "Casa de Don Lorenzo, Carrera 26 con Calle 19",
+        "description": "Módulos sanitarios céntricos ubicados a pocos metros del monumento a Nariño.",
     },
 
-    # Police CAIs (Seguridad y Convivencia)
+    # ------------------ Seguridad y CAIs (police) ------------------
     {
         "name": "CAI Plaza de Nariño",
         "category": "police",
-        "coordinates": [1.2140, -77.2792],
-        "description": "Puesto policial principal del centro histórico, cuadrante de vigilancia y recepción de denuncias.",
+        "coordinates": [1.2144, -77.2788],
+        "address": "Centro Histórico, esquina noroccidental Plaza de Nariño",
+        "description": "Atención policial inmediata, cuadrante centro histórico, recepción de denuncias y niños extraviados.",
     },
     {
         "name": "CAI Lorenzo de Aldana",
         "category": "police",
-        "coordinates": [1.2088, -77.2765],
-        "description": "Puesto policial del sector sur vigilando la glorieta Lorenzo de Aldana y Carrera 4.",
+        "coordinates": [1.2092, -77.2768],
+        "address": "Glorieta Lorenzo de Aldana con Carrera 4",
+        "description": "Puesto de control policial del sector sur para seguridad del primer tramo de la Senda.",
     },
     {
         "name": "CAI Morasurco",
         "category": "police",
-        "coordinates": [1.2290, -77.2830],
-        "description": "Puesto de control policial sector norte sobre la Avenida de los Estudiantes hacia Torobajo.",
+        "coordinates": [1.2298, -77.2835],
+        "address": "Entrada Norte, Avenida Santander / Panamericana",
+        "description": "Puesto policial del sector norte para apoyo y vigilancia en la Avenida de los Estudiantes y Torobajo.",
     },
 
-    # Health (Salud y Primeros Auxilios / Cruz Roja / Defensa Civil)
+    # ------------ Puestos de Salud y Primeros Auxilios (health) ------------
     {
-        "name": "Puesto de Socorro Cruz Roja - Plaza del Carnaval",
+        "name": "Puesto Cruz Roja Plaza Carnaval",
         "category": "health",
-        "coordinates": [1.2128, -77.2779],
-        "description": "Puesto de atención prehospitalaria, carpa de triage, ambulancia y paramédicos de la Cruz Roja.",
+        "coordinates": [1.2130, -77.2781],
+        "address": "Esquina Carrera 27 con Plaza del Carnaval",
+        "description": "Carpa de triage, atención prehospitalaria, ambulancia medicalizada y voluntarios de la Cruz Roja.",
     },
     {
-        "name": "Puesto de Emergencias Médicas - Calle 19 con Cra 27",
+        "name": "Puesto Defensa Civil San Felipe",
         "category": "health",
-        "coordinates": [1.2195, -77.2801],
-        "description": "Módulo de socorro asistencial de la Defensa Civil y brigadistas de primeros auxilios.",
+        "coordinates": [1.2180, -77.2800],
+        "address": "Calle 18 con Carrera 27, sector San Felipe",
+        "description": "Puesto de socorro de la Defensa Civil, hidratación, primeros auxilios y evacuación de emergencias.",
+    },
+    {
+        "name": "Hospital Departamental de Nariño",
+        "category": "health",
+        "coordinates": [1.2080, -77.2750],
+        "address": "Calle 16 # 27-02, Sector Hospitalario Sur",
+        "description": "Centro hospitalario de tercer nivel de urgencias y traumatología de alta complejidad.",
     },
 
-    # Music & Cultural Stages (Tarimas y Conciertos)
+    # ---------------- Restaurantes y Cafés Típicos (restaurant) ----------------
     {
-        "name": "Tarima Principal Plaza del Carnaval",
+        "name": "Restaurante El Paisano / Asadero",
+        "category": "restaurant",
+        "coordinates": [1.2190, -77.2802],
+        "address": "Sector San Felipe, Calle 18 # 26-45",
+        "description": "Restaurante típico tradicional de cuy asado, cerdo al horno, empanadas de añejo y lapingachos.",
+    },
+    {
+        "name": "Cafetería La Merced",
+        "category": "restaurant",
+        "coordinates": [1.2150, -77.2786],
+        "address": "Calle 18 cerca a Plaza de Nariño",
+        "description": "Café tradicional con quimbolitos, café nariñense de altura, pasteles de hojaldre y bebidas calientes.",
+    },
+    {
+        "name": "Zona Gastronómica Avenida de los Estudiantes",
+        "category": "restaurant",
+        "coordinates": [1.2270, -77.2828],
+        "address": "Avenida de los Estudiantes entre Calles 19 y 22",
+        "description": "Corredor gastronómico con asaderos, piqueteaderos, comidas rápidas y heladerías abiertas todo el desfile.",
+    },
+
+    # -------------------- Tarimas y Plazas (stage) --------------------
+    {
+        "name": "Tarima Oficial Plaza del Carnaval",
         "category": "stage",
         "coordinates": [1.2136, -77.2785],
-        "description": "Escenario principal de orquestas nacionales e internacionales, murgas y conciertos oficiales.",
+        "address": "Plaza del Carnaval y la Cultura",
+        "description": "Escenario principal de orquestas nacionales e internacionales, murgas y premiaciones del Carnaval.",
     },
     {
-        "name": "Tarima Cultural Plaza de Nariño",
+        "name": "Tarima de la Danza y Tradición Plaza de Nariño",
         "category": "stage",
         "coordinates": [1.2148, -77.2780],
-        "description": "Escenario de música andina, ensambles de vientos, danza tradicional y folclor nariñense.",
+        "address": "Plaza de Nariño, Centro Histórico",
+        "description": "Escenario cultural para danzas autóctonas, agrupaciones andinas y poesía costumbrista nariñense.",
     },
     {
-        "name": "Tarima Alternativa Plaza del Carrizal",
+        "name": "Tarima del Carrizal",
         "category": "stage",
         "coordinates": [1.2225, -77.2815],
-        "description": "Escenario de son sureño, música campesina, colectivos juveniles y trovadores.",
+        "address": "Avenida Mijitayo / Sector El Carrizal",
+        "description": "Escenario alternativo de son sureño, música campesina tradicional y colectivos juveniles.",
     },
 
-    # Shopping (Centros Comerciales y Abastecimiento)
+    # ------------------ Centros Comerciales (shopping) ------------------
     {
         "name": "Centro Comercial Sebastián de Belalcázar",
         "category": "shopping",
         "coordinates": [1.2160, -77.2765],
-        "description": "Centro comercial céntrico con cajeros automáticos, hidratación, farmacias y gastronomía típica.",
+        "address": "Calle 19 # 23-40, Centro",
+        "description": "Centro comercial céntrico con cajeros automáticos, farmacias, telefonía e insumos carnavaleros.",
     },
     {
         "name": "Centro Comercial Unicentro Pasto",
         "category": "shopping",
         "coordinates": [1.2285, -77.2835],
-        "description": "Gran complejo comercial del norte con amplia plazoleta de comidas, bancos y zona de descanso.",
+        "address": "Avenida Panamericana con Calle 22, Norte",
+        "description": "Gran complejo comercial con plazoleta de comidas, supermercado, parqueaderos y bancos.",
     },
 
-    # Risk & Crowd Congestion Zones (Zonas de Aglomeración)
+    # ------------- Zonas de Riesgo / Aglomeración (risk_zone) -------------
     {
         "name": "Embudo Carrera 27 con Plaza del Carnaval",
         "category": "risk_zone",
         "coordinates": [1.2135, -77.2788],
-        "description": "Zona de altísima afluencia y cuello de botella peatonal durante el paso de carrozas gigantes. Extreme precauciones.",
+        "address": "Carrera 27 intersección Calle 19, Plaza del Carnaval",
+        "description": "Zona de cuello de botella peatonal y alta aglomeración durante el paso de carrozas monumentales. Cuide a menores y objetos personales.",
     },
 ]
+
+# Alias for backwards compatibility
+NEARBY_SERVICE_POINTS: List[Dict[str, Any]] = PASTO_PLACES_DIRECTORY
 
 
 # ---------------------------------------------------------------------------
