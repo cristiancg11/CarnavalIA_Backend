@@ -141,14 +141,18 @@ async def health_check():
     include_in_schema=False
 )
 def carnaval_chat(payload: CarnavalChatRequest) -> CarnavalChatResponse:
-    """Handle conversational chat with GuaneñaBot extracting GIS route waypoints."""
+    """Handle conversational chat with GuaneñaBot extracting GIS route waypoints and telemetry."""
     result = chat_with_guanena(
         message=payload.message,
         chat_history=payload.history or []
     )
+    route_coords = result.get("route_coordinates") or result.get("waypoints", [])
     return CarnavalChatResponse(
         reply=result["reply"],
+        schedule=result.get("schedule"),
         should_draw_route=result["should_draw_route"],
-        waypoints=result["waypoints"],
-        suggested_questions=result["suggested_questions"]
+        route_coordinates=route_coords,
+        waypoints=result.get("waypoints") or route_coords,
+        nearby_places=result.get("nearby_places", []),
+        suggested_questions=result.get("suggested_questions", [])
     )

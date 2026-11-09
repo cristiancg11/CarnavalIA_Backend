@@ -1,12 +1,13 @@
-"""Gemini 2.5 Flash service for GuaneñaBot conversational AI and GIS route extraction.
+"""Gemini 2.5 Flash service for GuaneñaBot conversational AI and full GIS telemetry.
 
 Integrates Google Gemini 2.5 Flash to provide authentic Pastuso cultural guidance
-for the Carnaval de Negros y Blancos, extracting geospatial coordinates for Leaflet/OSRM maps.
+for the Carnaval de Negros y Blancos, extracting geospatial coordinates for Leaflet/OSRM maps,
+official parade schedules, route polylines, and nearby service layers (restrooms, police,
+first aid, stages, shopping, and congestion risk zones).
 """
 import json
 import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,14 @@ except ImportError:
     types = None
 
 from app.core.config import settings
+from app.services.carnaval_gis_data import (
+    SENDA_START,
+    SENDA_FINISH,
+    SENDA_OFFICIAL_PATH,
+    NEARBY_SERVICE_POINTS,
+    CARNAVAL_SCHEDULES,
+    get_schedule_for_query,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,89 +43,87 @@ PASTO_LANDMARKS: Dict[str, List[float]] = {
 }
 
 # The complete official Senda del Carnaval parade route sequence (South to North)
-SENDA_OFFICIAL_ROUTE: List[List[float]] = [
-    [1.2025, -77.2762],  # Estadio Libertad (Inicio Senda)
-    [1.2095, -77.2770],  # Glorieta Lorenzo de Aldana
-    [1.2136, -77.2785],  # Plaza del Carnaval y la Cultura
-    [1.2148, -77.2780],  # Carrera 27 / Cruce Plaza de Nariño
-    [1.2220, -77.2815],  # Carrera 27 hacia el norte
-    [1.2330, -77.2845],  # Avenida de los Estudiantes / Fuente de la Transparencia (Fin Senda)
-]
+SENDA_OFFICIAL_ROUTE: List[List[float]] = SENDA_OFFICIAL_PATH
 
-# Aliases dictionary for quick fuzzy matching
-LANDMARK_ALIASES: Dict[str, Dict[str, Any]] = {
-    "plaza del carnaval": {
-        "name": "Plaza del Carnaval",
-        "coords": [1.2136, -77.2785],
-        "keywords": ["plaza del carnaval", "plaza carnaval", "concha acustica"],
-    },
-    "plaza de nariño": {
-        "name": "Plaza de Nariño",
-        "coords": [1.2148, -77.2780],
-        "keywords": ["plaza de nariño", "plaza nariño", "plaza de narino", "plaza narino", "parque nariño"],
-    },
-    "estadio libertad": {
-        "name": "Estadio Libertad (Inicio Senda)",
-        "coords": [1.2025, -77.2762],
-        "keywords": ["estadio libertad", "estadio", "inicio de la senda", "salida senda", "partida"],
-    },
-    "glorieta lorenzo": {
-        "name": "Glorieta Lorenzo de Aldana",
-        "coords": [1.2095, -77.2770],
-        "keywords": ["glorieta lorenzo", "lorenzo de aldana", "lorenzo"],
-    },
-    "avenida estudiantes": {
-        "name": "Avenida de los Estudiantes / Fuente de la Transparencia (Fin Senda)",
-        "coords": [1.2330, -77.2845],
-        "keywords": ["avenida de los estudiantes", "av estudiantes", "fuente de la transparencia", "fin de la senda", "llegada"],
-    },
-    "templo san juan": {
-        "name": "Templo San Juan Bautista",
-        "coords": [1.2155, -77.2798],
-        "keywords": ["templo san juan bautista", "san juan bautista", "iglesia san juan", "templo san juan"],
-    },
-}
 
 # ==============================================================================
-# SYSTEM PROMPT FOR GUANEÑABOT (AUTHENTIC PASTUSO PERSONA)
+# SYSTEM PROMPT FOR GUANEÑABOT (AUTHENTIC PASTUSO PERSONA & TELEMETRY)
 # ==============================================================================
-GUANENA_SYSTEM_PROMPT = """You are GuaneñaBot, the official AI guide of Carnaval de Negros y Blancos in San Juan de Pasto, declared UNESCO Intangible Cultural Heritage. You guide tourists and locals across dates (Jan 2: Ofrenda a la Virgen de las Mercedes, Jan 3: Canto a la Tierra, Jan 4: Familia Castañeda, Jan 5: Día de Negros, Jan 6: Día de Blancos). When users ask for directions, places, or tours, explain warmly and identify the exact geographic route points.
+GUANENA_SYSTEM_PROMPT = """You are GuaneñaBot, the official AI guide of Carnaval de Negros y Blancos in San Juan de Pasto, declared UNESCO Intangible Cultural Heritage. You guide tourists and locals across dates:
+- Jan 2: Ofrenda a la Virgen de las Mercedes y Carnavalito (Starts ~9:00 AM at Templo San Juan, finishes ~1:30 PM at Santuario Las Mercedes).
+- Jan 3: Canto a la Tierra - Desfile de Colectivos Coreográficos (Starts ~10:00 AM at Estadio Libertad, finishes ~3:00 PM at Plaza del Carnaval).
+- Jan 4: Llegada de la Familia Castañeda (Starts ~10:00 AM at Estadio Libertad, finishes ~3:30 PM at Avenida de los Estudiantes).
+- Jan 5: Día de Negros - Juego de Cosmético (All day celebration 8:00 AM to 8:00 PM, centered at Plaza de Nariño and public plazas).
+- Jan 6: Desfile Magno - Día de Blancos / Carrozas Monumentales (Starts 9:00 AM at Estadio Libertad, finishes ~4:30 PM at Avenida de los Estudiantes / Torobajo).
+- Jan 7: Festival del Cuy y la Cultura Campesina (Starts ~10:00 AM in Catambuco and Obonuco).
+
+When users ask for directions, places, or tours, explain warmly and identify the exact geographic route points, schedule, and nearby services.
 
 Personality & Tone:
 - Speak in authentic, hospitable, enthusiastic Pastuso/Colombian Spanish.
 - Use regional expressions warmly and respectfully: "¡Qué viva Pasto, carajo!", "veci", "guagua", "a la orden", "paisano".
-- Provide rich historical context and carnival culture.
+- Provide rich historical context and safety recommendations.
 
-Geographic Landmarks in Pasto:
-- Plaza del Carnaval: [1.2136, -77.2785]
-- Plaza de Nariño: [1.2148, -77.2780]
-- Estadio Libertad (Inicio Senda): [1.2025, -77.2762]
-- Glorieta Lorenzo de Aldana: [1.2095, -77.2770]
-- Avenida de los Estudiantes / Fuente de la Transparencia (Fin Senda): [1.2330, -77.2845]
-- Templo San Juan Bautista: [1.2155, -77.2798]
+Official Senda Path (South to North through Pasto):
+[[1.2025, -77.2762], [1.2052, -77.2766], [1.2095, -77.2770], [1.2115, -77.2778], [1.2136, -77.2785], [1.2142, -77.2782], [1.2148, -77.2780], [1.2190, -77.2800], [1.2260, -77.2825], [1.2330, -77.2845]]
 
-Route Extraction Guidelines:
-1. If the user asks for directions, how to get somewhere, a path, tour, or the Senda route:
-   - Set "should_draw_route" to true.
-   - In "waypoints", provide the array of coordinates [[lat, lng], [lat, lng], ...] representing the route sequence or destination.
-   - For the full Senda del Carnaval parade route, return the full sequence:
-     [[1.2025, -77.2762], [1.2095, -77.2770], [1.2136, -77.2785], [1.2148, -77.2780], [1.2220, -77.2815], [1.2330, -77.2845]]
-2. If the user asks a general question about history, dates, or costumes without requesting navigation or a route:
-   - Set "should_draw_route" to false.
-   - "waypoints" can be empty or contain the single landmark mentioned.
-3. Always supply 3 relevant, engaging "suggested_questions" for the user to continue exploring.
+Nearby Service Categories:
+- restroom: Public baths and portable toilet points (e.g. Plaza del Carnaval [1.2130, -77.2780], Pasaje Corazón de Jesús [1.2152, -77.2775], Estadio Libertad [1.2030, -77.2758])
+- police: CAI security posts (e.g. CAI Plaza Nariño [1.2140, -77.2792], CAI Lorenzo [1.2088, -77.2765], CAI Morasurco [1.2290, -77.2830])
+- health: Emergency first aid / Red Cross tents (e.g. Cruz Roja Plaza Carnaval [1.2128, -77.2779], Puesto Calle 19 Cra 27 [1.2195, -77.2801])
+- stage: Concert and orchestra stages (e.g. Plaza del Carnaval [1.2136, -77.2785], Plaza de Nariño [1.2148, -77.2780], Plaza del Carrizal [1.2225, -77.2815])
+- shopping: Commercial centers (e.g. CC Sebastián de Belalcázar [1.2160, -77.2765], CC Unicentro Pasto [1.2285, -77.2835])
+- risk_zone: High congestion crowd bottleneck zones (e.g. Embudo Cra 27 Plaza Carnaval [1.2135, -77.2788])
+
+Instructions for Structured Output:
+1. "reply": Detailed advice, historical context, and safety recommendations in authentic Pastuso Spanish.
+2. "schedule": Estimated schedule with "start_time", "estimated_arrival_time", "start_location", "finish_location" based on the carnival day discussed.
+3. "should_draw_route": Set true if user asks for directions, a path, the Senda route, or a tour.
+4. "route_coordinates": List of [lat, lng] points for the street path.
+5. "nearby_places": Relevant nearby services selected from restroom, police, health, stage, shopping, and risk_zone with name, category, coordinates, and description.
+6. "suggested_questions": 3 follow-up prompt questions.
 """
 
 
 # ==============================================================================
-# PYDANTIC SCHEMA FOR STRUCTURED OUTPUT
+# PYDANTIC SCHEMAS FOR STRUCTURED GEMINI INFERENCE
 # ==============================================================================
+class CarnavalScheduleSchema(BaseModel):
+    """Event schedule structure generated by Gemini 2.5 Flash."""
+    start_time: str = Field(..., description="Scheduled start time (e.g. '10:00 AM')")
+    estimated_arrival_time: str = Field(..., description="Estimated finish time (e.g. '3:30 PM')")
+    start_location: str = Field(..., description="Starting location name (e.g. 'Estadio Libertad')")
+    finish_location: str = Field(..., description="Finishing location name (e.g. 'Avenida de los Estudiantes')")
+
+
+class NearbyPlaceSchema(BaseModel):
+    """Nearby service point or risk zone along the route."""
+    name: str = Field(..., description="Name of the service or landmark")
+    category: str = Field(..., description="Category: restroom, police, health, stage, restaurant, shopping, risk_zone")
+    coordinates: List[float] = Field(..., description="[latitude, longitude] in Pasto")
+    description: str = Field(..., description="Brief description or safety note")
+
+
 class GuaneñaStructuredResponse(BaseModel):
-    """Structured response model generated by Gemini 2.5 Flash."""
-    reply: str = Field(..., description="Warm Pastuso conversational response explaining the cultural context.")
+    """Full structured response model generated by Gemini 2.5 Flash."""
+    reply: str = Field(..., description="Warm Pastuso conversational response explaining cultural and GIS details.")
+    schedule: Optional[CarnavalScheduleSchema] = Field(
+        default=None,
+        description="Parade departure and arrival schedule estimates."
+    )
     should_draw_route: bool = Field(..., description="True if a route or direction should be rendered on map.")
-    waypoints: List[List[float]] = Field(default=[], description="List of [latitude, longitude] pairs for Leaflet/OSRM.")
-    suggested_questions: List[str] = Field(default=[], description="Three concise suggested follow-up questions.")
+    route_coordinates: List[List[float]] = Field(
+        default=[],
+        description="List of [latitude, longitude] pairs for Leaflet Polyline."
+    )
+    nearby_places: List[NearbyPlaceSchema] = Field(
+        default=[],
+        description="Strategic public services and risk zones near the route."
+    )
+    suggested_questions: List[str] = Field(
+        default=[],
+        description="Three concise suggested follow-up questions."
+    )
 
 
 def _clean_json_text(raw_text: str) -> str:
@@ -132,11 +139,15 @@ def _clean_json_text(raw_text: str) -> str:
 
 
 # ==============================================================================
-# DETERMINISTIC FALLBACK ENGINE
+# DETERMINISTIC FALLBACK ENGINE WITH FULL TELEMETRY
 # ==============================================================================
 def _deterministic_fallback(message: str) -> Dict[str, Any]:
-    """Provide high-fidelity cultural responses and GIS coordinates if Gemini API is unreachable."""
+    """Provide high-fidelity cultural responses, schedule, route, and nearby layers."""
     msg = message.lower().strip()
+    schedule_data = get_schedule_for_query(message)
+
+    # Filter nearby places or provide all official points
+    nearby_points = NEARBY_SERVICE_POINTS
 
     # Case 1: Route of the Senda del Carnaval / Full Tour
     if any(k in msg for k in ["senda", "recorrido", "ruta del desfile", "trayecto", "desfile magno ruta", "camino"]):
@@ -145,99 +156,120 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
                 "¡Qué viva Pasto, carajo, veci! La majestuosa Senda del Carnaval recorre aproximadamente 7 kilómetros "
                 "de fervor y alegría popular. El desfile arranca en el sur en el Estadio Libertad, avanza por la Glorieta "
                 "Lorenzo de Aldana, atraviesa la Plaza del Carnaval y la Carrera 27 junto a la Plaza de Nariño, y culmina "
-                "al norte en la Avenida de los Estudiantes junto a la Fuente de la Transparencia. ¡Aquí le trazo la ruta completa en el mapa!"
+                "al norte en la Avenida de los Estudiantes junto a la Fuente de la Transparencia. "
+                "¡Le he trazado la ruta oficial completa, el horario programado y todos los puntos de auxilio, baños y tarimas!"
             ),
+            "schedule": schedule_data,
             "should_draw_route": True,
-            "waypoints": SENDA_OFFICIAL_ROUTE,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": nearby_points,
             "suggested_questions": [
-                "¿Dónde queda la Plaza del Carnaval?",
+                "¿Dónde quedan los baños y puestos de salud en la Plaza del Carnaval?",
                 "¿A qué hora arranca el desfile del 6 de enero?",
                 "¿Qué se celebra el 4 de enero con la Familia Castañeda?"
             ]
         }
 
-    # Case 2: Plaza del Carnaval
-    if any(k in msg for k in ["plaza del carnaval", "plaza carnaval", "concha acústica", "concha acustica"]):
-        coords = PASTO_LANDMARKS["Plaza del Carnaval"]
+    # Case 2: Baños / Servicios Sanitarios
+    if any(k in msg for k in ["baño", "baños", "sanitario", "servicios sanitarios", "restroom"]):
+        restrooms = [p for p in nearby_points if p["category"] == "restroom"]
         return {
             "reply": (
-                "¡A la orden, veci! La Plaza del Carnaval y la Cultura es el corazón palpitante de nuestra fiesta. "
-                "Allí se concentran las graderías oficiales, la gran tarima de orquestas y las premiaciones de las "
-                "monumentales carrozas. Se ubica en las coordenadas [1.2136, -77.2785]. ¡Ya le marco el punto en el mapa!"
+                "¡A la orden, veci! Durante los días de Carnaval tenemos baterías de baños públicos y módulos portátiles "
+                "estratégicamente ubicados en la Plaza del Carnaval, el Pasaje Corazón de Jesús (centro) y en las inmediaciones "
+                "del Estadio Libertad. ¡Aquí le marco las ubicaciones en el mapa para que no pase apuros!"
             ),
+            "schedule": schedule_data,
             "should_draw_route": True,
-            "waypoints": [coords],
+            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in restrooms],
+            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in restrooms],
+            "nearby_places": restrooms,
             "suggested_questions": [
-                "¿Cómo llegar a la Plaza del Carnaval desde el Estadio Libertad?",
-                "¿Qué eventos se realizan en la Plaza del Carnaval?",
-                "¿Dónde queda la Plaza de Nariño?"
+                "¿Dónde queda el puesto de salud más cercano?",
+                "¿Cuál es el recorrido de la Senda del Carnaval?",
+                "¿Dónde queda la Plaza del Carnaval?"
             ]
         }
 
-    # Case 3: Plaza de Nariño / Templo San Juan
-    if any(k in msg for k in ["plaza de nariño", "plaza nariño", "plaza narino", "templo san juan", "san juan bautista"]):
-        coords = PASTO_LANDMARKS["Plaza de Nariño"]
+    # Case 3: Seguridad / Policía / CAI
+    if any(k in msg for k in ["policia", "policía", "cai", "seguridad", "denuncia", "robo"]):
+        police_points = [p for p in nearby_points if p["category"] == "police"]
         return {
             "reply": (
-                "¡Bienvenido al centro histórico de San Juan de Pasto, paisano! La Plaza de Nariño y el contiguo Templo "
-                "de San Juan Bautista son testigos del tradicional Día de Negros el 5 de enero, donde jugamos con la "
-                "fraternal pintica de cosmético al son de murgas tradicionales. Coordenadas: [1.2148, -77.2780]."
+                "¡Tranquilo, paisano! La Policía Metropolitana tiene instalados CAI de atención inmediata y cuadrantes en "
+                "la Plaza de Nariño, la Glorieta Lorenzo de Aldana y en Morasurco sobre la Avenida de los Estudiantes. "
+                "Recomendación carnavalera: cuide sus objetos personales, evite el uso excesivo del celular en aglomeraciones "
+                "y acuda de inmediato a cualquiera de estos puntos."
             ),
+            "schedule": schedule_data,
             "should_draw_route": True,
-            "waypoints": [coords],
+            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in police_points],
+            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in police_points],
+            "nearby_places": police_points,
             "suggested_questions": [
-                "¿Qué actividades hay el 5 de enero en la Plaza de Nariño?",
-                "¿Cómo ir de la Plaza de Nariño a la Plaza del Carnaval?",
-                "¿Dónde puedo probar empanadas de añejo?"
+                "¿Dónde queda el CAI de la Plaza de Nariño?",
+                "¿Cuáles son las zonas de mayor aglomeración?",
+                "¿Dónde están los puestos de la Cruz Roja?"
             ]
         }
 
-    # Case 4: Estadio Libertad (Inicio Senda)
-    if any(k in msg for k in ["estadio libertad", "estadio", "salida", "inicio", "arranca"]):
-        coords = PASTO_LANDMARKS["Estadio Libertad (Inicio Senda)"]
+    # Case 4: Salud / Cruz Roja / Primeros Auxilios
+    if any(k in msg for k in ["salud", "cruz roja", "primeros auxilios", "ambulancia", "medico", "médico", "emergencia"]):
+        health_points = [p for p in nearby_points if p["category"] == "health"]
         return {
             "reply": (
-                "¡Qué viva Pasto, carajo! El Estadio Libertad, al sur de la ciudad, es el tradicional punto de partida "
-                "y concentración de los colectivos coreográficos, carrozas y murgas antes de entrar a la Senda. "
-                "Coordenadas de salida: [1.2025, -77.2762]."
+                "¡Para servirle, veci! Si presenta alguna emergencia médica, la Cruz Roja y la Defensa Civil cuentan con puestos "
+                "de triage y ambulancias permanentes junto a la Plaza del Carnaval y en el cruce de la Calle 19 con Carrera 27. "
+                "¡Cuídese los ojitos del talco y manténgase bien hidratado!"
             ),
+            "schedule": schedule_data,
             "should_draw_route": True,
-            "waypoints": [coords],
+            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in health_points],
+            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in health_points],
+            "nearby_places": health_points,
             "suggested_questions": [
-                "¿Cuál es el recorrido completo desde el Estadio Libertad?",
-                "¿Qué desfiles salen desde el Estadio Libertad?",
-                "¿Dónde termina la Senda del Carnaval?"
+                "¿Dónde queda el puesto de salud de la Plaza del Carnaval?",
+                "¿Dónde puedo comprar gafas protectoras para el talco?",
+                "¿Cómo llegar a la Plaza de Nariño?"
             ]
         }
 
-    # Case 5: Avenida de los Estudiantes / Fin Senda
-    if any(k in msg for k in ["avenida de los estudiantes", "estudiantes", "fuente de la transparencia", "fin de la senda", "llegada"]):
-        coords = PASTO_LANDMARKS["Avenida de los Estudiantes / Fuente de la Transparencia (Fin Senda)"]
+    # Case 5: Tarimas / Música / Conciertos
+    if any(k in msg for k in ["tarima", "concierto", "musica", "música", "orquesta", "escenario"]):
+        stage_points = [p for p in nearby_points if p["category"] == "stage"]
         return {
             "reply": (
-                "¡Qué emoción, veci! La Avenida de los Estudiantes y la emblemática Fuente de la Transparencia "
-                "marcan la meta y punto de desconcentración de los grandes desfiles tras recorrer la Carrera 27. "
-                "Coordenadas de llegada: [1.2330, -77.2845]."
+                "¡A gozar y a bailar, veci! Las tres tarimas oficiales del Carnaval están encendidas: la Tarima Principal en la "
+                "Plaza del Carnaval con grandes orquestas, la Tarima Cultural en la Plaza de Nariño con música andina y danza tradicional, "
+                "y la Tarima Alternativa en el Carrizal con son sureño y música campesina."
             ),
+            "schedule": schedule_data,
             "should_draw_route": True,
-            "waypoints": [coords],
+            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in stage_points],
+            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in stage_points],
+            "nearby_places": stage_points,
             "suggested_questions": [
-                "¿Qué restaurantes tradicionales quedan cerca a la Avenida de los Estudiantes?",
-                "¿Cómo es la ruta completa de la Senda?",
-                "¿Qué día desfilan las carrozas monumentales?"
+                "¿Quién se presenta en la Plaza del Carnaval?",
+                "¿A qué hora terminan los conciertos en las plazas?",
+                "¿Dónde queda la Plaza del Carrizal?"
             ]
         }
 
     # Case 6: Jan 4 - Familia Castañeda
-    if any(k in msg for k in ["familia castañeda", "castañeda", "castaneda", "4 de enero", "cuatro de enero"]):
+    if any(k in msg for k in ["familia castañeda", "castañeda", "castaneda", "4 de enero"]):
+        jan4_sched = CARNAVAL_SCHEDULES["jan_04"]
         return {
             "reply": (
-                "¡Abran cancha que llegó la Familia Castañeda, veci! El 4 de enero revivimos la histórica llegada de "
-                "esta comitiva campesina en 1929. El desfile recrea cuadros costumbristas, carretas de época y personajes "
-                "típicos saludando a propios y visitantes. La caravana recorre la Senda desde el sur hasta el centro."
+                "¡Abran cancha que llegó la Familia Castañeda, veci! El 4 de enero conmemoramos la histórica llegada de "
+                "esta alegre familia en 1929. El desfile arranca a las 10:00 AM en el Estadio Libertad y arriba hacia las "
+                "3:30 PM a la Avenida de los Estudiantes con estampas de arrieros, carretas campesinas y el saludo de Don Pericles Carnaval."
             ),
+            "schedule": jan4_sched,
             "should_draw_route": True,
-            "waypoints": [PASTO_LANDMARKS["Estadio Libertad (Inicio Senda)"], PASTO_LANDMARKS["Plaza del Carnaval"]],
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": nearby_points,
             "suggested_questions": [
                 "¿A qué hora empieza la Familia Castañeda?",
                 "¿Dónde ver mejor el desfile del 4 de enero?",
@@ -245,36 +277,44 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
             ]
         }
 
-    # Case 7: Jan 6 - Día de Blancos / Carrozas
-    if any(k in msg for k in ["6 de enero", "seis de enero", "blancos", "carroza", "magno"]):
+    # Case 7: Jan 6 - Desfile Magno / Carrozas
+    if any(k in msg for k in ["6 de enero", "blancos", "carroza", "magno"]):
+        jan6_sched = CARNAVAL_SCHEDULES["jan_06"]
         return {
             "reply": (
                 "¡La cumbre monumental de nuestra fiesta, paisano! El 6 de enero es el Día de Blancos y el Desfile Magno. "
-                "Nuestros maestros artesanos exhiben gigantescas obras de arte rodante de hasta 12 metros de altura, "
-                "acompañadas de miles de danzantes y el alegre juego con talco y carioca. Todo arranca en el Estadio Libertad."
+                "Nuestros maestros artesanos exhiben gigantescas carrozas de hasta 12 metros de altura acompañadas de murgas y comparsas. "
+                "El desfile inicia a las 9:00 AM en el Estadio Libertad y culmina aproximadamente a las 4:30 PM en la Avenida de los Estudiantes."
             ),
+            "schedule": jan6_sched,
             "should_draw_route": True,
-            "waypoints": SENDA_OFFICIAL_ROUTE,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": nearby_points,
             "suggested_questions": [
                 "¿Cuál es el recorrido del Desfile Magno?",
-                "¿Qué medidas de seguridad debo tener para el talco y carioca?",
+                "¿Dónde están ubicados los baños en la ruta?",
                 "¿Dónde termina el desfile del 6 de enero?"
             ]
         }
 
-    # Default friendly Pastuso response
+    # Default friendly Pastuso response with telemetry
     return {
         "reply": (
             "¡Qué viva Pasto, carajo, veci! Soy GuaneñaBot, su guía oficial del Carnaval de Negros y Blancos. "
-            "Puedo orientarle sobre la programación (2 de enero al 7 de enero), trazarle la ruta de la Senda del Carnaval "
-            "o indicarle las coordenadas exactas de la Plaza del Carnaval, la Plaza de Nariño y el Estadio Libertad. ¿Para dónde vamos hoy?"
+            "Puedo informarle sobre los horarios de salida y llegada de los desfiles, trazarle la Senda del Carnaval "
+            "en el mapa, y mostrarle los puntos de baños (🚻), puestos de salud (🚑), CAI policiales (👮), tarimas musicales (🎪) "
+            "y zonas de alta aglomeración (⚠️). ¿En qué le puedo colaborar hoy?"
         ),
-        "should_draw_route": False,
-        "waypoints": [],
+        "schedule": schedule_data,
+        "should_draw_route": True,
+        "route_coordinates": SENDA_OFFICIAL_PATH,
+        "waypoints": SENDA_OFFICIAL_PATH,
+        "nearby_places": nearby_points,
         "suggested_questions": [
             "¿Cuál es el recorrido oficial de la Senda del Carnaval?",
-            "¿Dónde queda la Plaza del Carnaval?",
-            "¿Qué se celebra el 6 de enero en Pasto?"
+            "¿Dónde quedan los baños y puestos de salud?",
+            "¿A qué hora empieza el Desfile Magno del 6 de enero?"
         ]
     }
 
@@ -290,11 +330,7 @@ def chat_with_guanena(message: str, chat_history: Optional[List[Dict[str, str]]]
         chat_history: Optional list of previous message turns.
 
     Returns:
-        Dict matching CarnavalChatResponse schema:
-        - reply: str
-        - should_draw_route: bool
-        - waypoints: List[List[float]]
-        - suggested_questions: List[str]
+        Dict matching CarnavalChatResponse schema with schedule, route, and nearby places.
     """
     if chat_history is None:
         chat_history = []
@@ -320,7 +356,7 @@ def chat_with_guanena(message: str, chat_history: Optional[List[Dict[str, str]]]
             prompt_content = f"""{history_context}
 User Query: "{message}"
 
-Please respond according to your persona and structured JSON schema.
+Please respond according to your persona and structured JSON schema including schedule, route_coordinates, and nearby_places.
 """
 
             response = client.models.generate_content(
@@ -337,13 +373,29 @@ Please respond according to your persona and structured JSON schema.
             if response and response.text:
                 cleaned_text = _clean_json_text(response.text)
                 data = json.loads(cleaned_text)
+
+                route_coords = data.get("route_coordinates", [])
+                if not route_coords and data.get("should_draw_route"):
+                    route_coords = SENDA_OFFICIAL_PATH
+
+                schedule_obj = data.get("schedule")
+                if not schedule_obj:
+                    schedule_obj = get_schedule_for_query(message)
+
+                nearby_places = data.get("nearby_places", [])
+                if not nearby_places:
+                    nearby_places = NEARBY_SERVICE_POINTS
+
                 return {
                     "reply": data.get("reply", "¡Qué viva Pasto, carajo!"),
+                    "schedule": schedule_obj,
                     "should_draw_route": bool(data.get("should_draw_route", False)),
-                    "waypoints": data.get("waypoints", []),
+                    "route_coordinates": route_coords,
+                    "waypoints": route_coords,
+                    "nearby_places": nearby_places,
                     "suggested_questions": data.get("suggested_questions", [
+                        "¿Dónde quedan los baños públicos?",
                         "¿Cuál es el recorrido de la Senda?",
-                        "¿Dónde queda la Plaza del Carnaval?",
                         "¿Qué se celebra el 6 de enero?"
                     ])
                 }

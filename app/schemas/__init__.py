@@ -5,7 +5,12 @@ from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.zone_risk import ZoneRiskBase, ZoneRiskResponse
 from app.schemas.auth import UserRegister, UserLogin, UserResponse, TokenResponse
 from app.schemas.chat_schema import MapAction
-from app.schemas.carnaval import CarnavalChatRequest, CarnavalChatResponse
+from app.schemas.carnaval import (
+    CarnavalChatRequest,
+    CarnavalChatResponse,
+    CarnavalSchedule,
+    NearbyPlace,
+)
 
 __all__ = [
     "ReportBase",
@@ -24,4 +29,6 @@ __all__ = [
     "TokenResponse",
     "CarnavalChatRequest",
     "CarnavalChatResponse",
+    "CarnavalSchedule",
+    "NearbyPlace",
 ]
