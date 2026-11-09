@@ -22,6 +22,10 @@ from app.api.health import router as health_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.auth import router as auth_router
 
+# Importar esquemas y servicio conversacional de Gemini 2.5 Flash
+from app.schemas import CarnavalChatRequest, CarnavalChatResponse
+from app.services.gemini_service import chat_with_guanena
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,10 +56,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración de Middleware de CORS Universal (permite todos los orígenes)
+# Configuración de Middleware de CORS (permite puertos frontend locales 5173, 5180, 3000 y orígenes universales)
+ALLOWED_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5180",
+    "http://127.0.0.1:5180",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "*",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,3 +124,31 @@ async def health_check():
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION
     }
+
+
+@app.post(
+    "/api/v1/carnaval/chat",
+    response_model=CarnavalChatResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Carnaval AI"],
+    summary="Chat with GuaneñaBot powered by Gemini 2.5 Flash and Senda GIS coordinates",
+    description="Processes natural language tourist prompts and returns authentic Pastuso cultural replies along with exact GIS route waypoints for Leaflet/OSRM maps."
+)
+@app.post(
+    "/api/v1/carnaval/chat/",
+    response_model=CarnavalChatResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False
+)
+def carnaval_chat(payload: CarnavalChatRequest) -> CarnavalChatResponse:
+    """Handle conversational chat with GuaneñaBot extracting GIS route waypoints."""
+    result = chat_with_guanena(
+        message=payload.message,
+        chat_history=payload.history or []
+    )
+    return CarnavalChatResponse(
+        reply=result["reply"],
+        should_draw_route=result["should_draw_route"],
+        waypoints=result["waypoints"],
+        suggested_questions=result["suggested_questions"]
+    )
