@@ -15,18 +15,32 @@ class CarnavalSchedule(BaseModel):
 class NearbyPlace(BaseModel):
     """Strategic urban service point or crowd-risk zone along the Senda."""
     name: str = Field(..., description="Official title or label of the landmark.")
-    category: str = Field(..., description="Category: restroom, police, health, stage, restaurant, shopping, risk_zone.")
+    category: str = Field(..., description="Category: bathroom, cai, health, stage, restaurant, shopping, risk_zone.")
     coordinates: List[float] = Field(..., description="[latitude, longitude] geographic coordinates.")
     description: Optional[str] = Field(default="", description="Service details, triage capability, or safety warning.")
     address: Optional[str] = Field(default="", description="Exact street address or urban reference in Pasto.")
+    distance_meters: Optional[float] = Field(default=None, description="Distance from user's GPS position in meters.")
+    proximity_label: Optional[str] = Field(default=None, description="Human-friendly proximity label (e.g. 'a 180 metros').")
 
 
 class CarnavalChatRequest(BaseModel):
-    """Request payload for GuaneñaBot Carnaval chat endpoint."""
+    """Request payload for GuaneñaBot Carnaval chat endpoint with real-time GPS telemetry."""
     message: str = Field(..., min_length=1, description="User prompt or question in natural language.")
     history: Optional[List[Dict[str, str]]] = Field(
         default=[],
         description="Optional conversation history list of role-content message turns."
+    )
+    user_lat: Optional[float] = Field(
+        default=1.2148,
+        description="User real-time GPS latitude (defaults to Plaza de Nariño if GPS disabled)."
+    )
+    user_lng: Optional[float] = Field(
+        default=-77.2780,
+        description="User real-time GPS longitude (defaults to Plaza de Nariño if GPS disabled)."
+    )
+    requested_day: Optional[str] = Field(
+        default="4 de enero",
+        description="Optional requested carnival day (e.g. '4 de enero', '6 de enero')."
     )
 
 
@@ -48,7 +62,7 @@ class CarnavalChatResponse(BaseModel):
     )
     nearby_places: List[NearbyPlace] = Field(
         default=[],
-        description="List of nearby public services, safety points, and risk zones."
+        description="List of nearby public services, safety points, and risk zones sorted by proximity."
     )
     suggested_questions: List[str] = Field(
         default=[],

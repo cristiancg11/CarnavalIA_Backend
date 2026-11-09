@@ -1,9 +1,9 @@
-"""Gemini 2.5 Flash service for GuaneñaBot conversational AI and full GIS telemetry.
+"""Gemini 2.5 Flash service for GuaneñaBot conversational AI and real-time GPS telemetry.
 
 Integrates Google Gemini 2.5 Flash to provide authentic Pastuso cultural guidance
 for the Carnaval de Negros y Blancos, extracting high-precision street-level coordinates
-for Leaflet/OSRM maps, parade schedules, and a comprehensive directory of verified
-Pasto places (bathrooms, police CAIs, health stations, restaurants, stages, and shopping).
+for Leaflet/OSRM maps, parade schedules, Haversine distance calculations, and real-time
+proximity to verified Pasto places (bathrooms, CAIs, health stations, restaurants, and stages).
 """
 import json
 import logging
@@ -26,8 +26,10 @@ from app.services.carnaval_gis_data import (
     PASTO_PLACES_DIRECTORY,
     NEARBY_SERVICE_POINTS,
     CARNAVAL_SCHEDULES,
+    get_nearest_pois,
     get_schedule_for_query,
 )
+from app.services.spatial_utils import calculate_distance_meters, format_proximity_label
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ SENDA_OFFICIAL_ROUTE: List[List[float]] = SENDA_OFFICIAL_PATH
 
 
 # ==============================================================================
-# SYSTEM PROMPT WITH VERIFIED PASTO DIRECTORY
+# SYSTEM PROMPT WITH REAL-TIME GPS AND PROXIMITY CONTEXT
 # ==============================================================================
 GUANENA_SYSTEM_PROMPT = """You are GuaneñaBot, the official AI guide of Carnaval de Negros y Blancos in San Juan de Pasto, declared UNESCO Intangible Cultural Heritage. You guide tourists and locals across dates:
 - Jan 2: Ofrenda a la Virgen de las Mercedes y Carnavalito (Starts ~9:00 AM at Templo San Juan, finishes ~1:30 PM at Santuario Las Mercedes).
@@ -49,54 +51,23 @@ GUANENA_SYSTEM_PROMPT = """You are GuaneñaBot, the official AI guide of Carnava
 Personality & Tone:
 - Speak in authentic, hospitable, enthusiastic Pastuso/Colombian Spanish.
 - Use regional expressions warmly and respectfully: "¡Qué viva Pasto, carajo!", "veci", "guagua", "a la orden", "paisano".
-- Provide rich historical context and safety recommendations.
+- Provide rich historical context, exact walking distance, and safety recommendations.
 
 Official Senda Path (High-precision street-by-street path from South to North in Pasto):
-[[1.2025, -77.2762], [1.2060, -77.2766], [1.2095, -77.2770], [1.2115, -77.2778], [1.2136, -77.2785], [1.2140, -77.2782], [1.2148, -77.2780], [1.2185, -77.2798], [1.2220, -77.2810], [1.2260, -77.2825], [1.2295, -77.2838], [1.2330, -77.2845]]
+[[1.2025, -77.2762], [1.2058, -77.2766], [1.2095, -77.2770], [1.2115, -77.2778], [1.2136, -77.2785], [1.2140, -77.2782], [1.2148, -77.2780], [1.2185, -77.2798], [1.2220, -77.2810], [1.2260, -77.2825], [1.2295, -77.2838], [1.2330, -77.2845]]
 
-Comprehensive Verified Pasto Places Directory:
-1. Baños Públicos:
-   - "Batería San Agustín": Calle 19 con Cra 24 [1.2138, -77.2779] (Abierto 8:00 AM - 9:00 PM)
-   - "Baños Plaza del Carnaval": Parqueadero subterráneo Plaza Carnaval [1.2132, -77.2783] (Abierto continuo)
-   - "Baños Estadio Libertad": Costado Occidental [1.2028, -77.2765] (Abierto desde las 7:00 AM)
-   - "Baños Plaza de Nariño": Casa de Don Lorenzo Cra 26 [1.2149, -77.2783] (Abierto 8:00 AM - 10:00 PM)
-
-2. Seguridad y CAIs:
-   - "CAI Plaza de Nariño": Centro Histórico [1.2144, -77.2788] (24 Horas)
-   - "CAI Lorenzo de Aldana": Glorieta Lorenzo [1.2092, -77.2768] (24 Horas)
-   - "CAI Morasurco": Entrada Norte Avenida Santander [1.2298, -77.2835] (24 Horas)
-
-3. Puestos de Salud y Primeros Auxilios:
-   - "Puesto Cruz Roja Plaza Carnaval": Esquina Cra 27 [1.2130, -77.2781] (Triage y ambulancias 8:00 AM - 11:00 PM)
-   - "Puesto Defensa Civil San Felipe": Calle 18 Cra 27 [1.2180, -77.2800] (Primeros auxilios durante el desfile)
-   - "Hospital Departamental de Nariño": Calle 16 [1.2080, -77.2750] (Urgencias 24 Horas)
-
-4. Restaurantes y Cafés típicos:
-   - "Restaurante El Paisano / Asadero": Sector San Felipe Calle 18 (Cuy y platos típicos) [1.2190, -77.2802]
-   - "Cafetería La Merced": Calle 18 cerca a Plaza Nariño [1.2150, -77.2786]
-   - "Zona Gastronómica Avenida de los Estudiantes": Asaderos y comidas rápidas abiertas todo el desfile [1.2270, -77.2828]
-
-5. Tarimas y Plazas:
-   - "Tarima Oficial Plaza del Carnaval": Presentaciones orquestas y murgas [1.2136, -77.2785]
-   - "Tarima de la Danza y Tradición Plaza de Nariño": Presentaciones autóctonas [1.2148, -77.2780]
-   - "Tarima del Carrizal": Avenida Mijitayo [1.2225, -77.2815]
-
-6. Centros Comerciales:
-   - "Centro Comercial Sebastián de Belalcázar": Calle 19 # 23-40 [1.2160, -77.2765]
-   - "Centro Comercial Unicentro Pasto": Avenida Panamericana [1.2285, -77.2835]
-
-7. Zonas de Riesgo / Aglomeración:
-   - "Embudo Carrera 27 con Plaza del Carnaval": Carrera 27 intersección Calle 19 [1.2135, -77.2788]
-
-Directory Rule:
-When the user asks about bathrooms, restaurants, CAIs, stages, or health spots, look up the exact places from your Pasto directory. State their specific location, street reference, operating hours during the carnival, and return them in "nearby_places" with coordinates and address.
+Real-Time Spatial Proximity Rules:
+1. Always check the user's real-time GPS location provided in the prompt.
+2. Explicitly tell the user: "Te encuentras a X metros de [Lugar], el más cercano es..." (or in blocks/cuadras away).
+3. If the user asks about bathrooms, restaurants, CAIs, health spots, or stages, look up the nearest sorted places and mention the closest one with meters and address.
+4. Whenever the user asks for the Senda, dates, directions, or navigation, always return the full official polyline path SENDA_OFFICIAL_PATH in "route_coordinates".
 
 Instructions for Structured Output:
-1. "reply": Detailed answer mentioning specific places, exact addresses, operating hours, recommendations, and lore in authentic Pastuso Spanish.
+1. "reply": Detailed answer naming the single closest facility with exact meters/blocks away, exact address, and warm Pastuso lore.
 2. "schedule": Estimated schedule with "start_time", "estimated_arrival_time", "start_location", "finish_location" based on the carnival day discussed.
-3. "should_draw_route": Set true if user asks for directions, a path, the Senda route, or a tour.
+3. "should_draw_route": Always set true for route inquiries, places, or dates.
 4. "route_coordinates": Array of exact [lat, lng] street points along the Senda.
-5. "nearby_places": Array of relevant places matching the query from the Pasto directory with name, category, coordinates, description, and address.
+5. "nearby_places": Array of relevant places matching the query, sorted from closest to furthest, with name, category, coordinates, description, address, distance_meters, and proximity_label.
 6. "suggested_questions": 3 follow-up prompt questions.
 """
 
@@ -115,15 +86,17 @@ class CarnavalScheduleSchema(BaseModel):
 class NearbyPlaceSchema(BaseModel):
     """Nearby service point or landmark along the route."""
     name: str = Field(..., description="Official name of the service or landmark")
-    category: str = Field(..., description="Category: restroom, police, health, restaurant, stage, shopping, risk_zone")
+    category: str = Field(..., description="Category: bathroom, cai, health, restaurant, stage, shopping, risk_zone")
     coordinates: List[float] = Field(..., description="[latitude, longitude] in Pasto")
     description: str = Field(..., description="Brief description or safety note")
     address: Optional[str] = Field(default="", description="Street address or local landmark reference")
+    distance_meters: Optional[float] = Field(default=None, description="Distance from user's GPS in meters")
+    proximity_label: Optional[str] = Field(default=None, description="Human proximity label (e.g. 'a 180 metros')")
 
 
 class GuaneñaStructuredResponse(BaseModel):
     """Full structured response model generated by Gemini 2.5 Flash."""
-    reply: str = Field(..., description="Warm Pastuso conversational response explaining cultural and GIS details.")
+    reply: str = Field(..., description="Warm Pastuso conversational response explaining cultural and proximity details.")
     schedule: Optional[CarnavalScheduleSchema] = Field(
         default=None,
         description="Parade departure and arrival schedule estimates."
@@ -135,7 +108,7 @@ class GuaneñaStructuredResponse(BaseModel):
     )
     nearby_places: List[NearbyPlaceSchema] = Field(
         default=[],
-        description="Strategic public services and landmarks matching the inquiry."
+        description="Strategic public services and landmarks sorted by proximity to the user."
     )
     suggested_questions: List[str] = Field(
         default=[],
@@ -156,34 +129,60 @@ def _clean_json_text(raw_text: str) -> str:
 
 
 # ==============================================================================
-# DETERMINISTIC FALLBACK ENGINE WITH VERIFIED DIRECTORY
+# DETERMINISTIC FALLBACK ENGINE WITH HAVERSINE PROXIMITY
 # ==============================================================================
-def _deterministic_fallback(message: str) -> Dict[str, Any]:
-    """Provide high-fidelity cultural responses, schedule, route, and verified directory points."""
+def _deterministic_fallback(
+    message: str,
+    user_lat: float = 1.2148,
+    user_lng: float = -77.2780,
+    requested_day: Optional[str] = None
+) -> Dict[str, Any]:
+    """Provide high-fidelity cultural responses, schedule, route, and real-time proximity sorting."""
     msg = message.lower().strip()
-    schedule_data = get_schedule_for_query(message)
+    schedule_data = get_schedule_for_query(requested_day or message)
 
-    # Filter categories helper
-    def get_by_category(cat: str) -> List[Dict[str, Any]]:
-        return [p for p in PASTO_PLACES_DIRECTORY if p["category"] == cat]
+    # Detect requested category
+    target_category = None
+    if any(k in msg for k in ["baño", "baños", "sanitario", "sanitarios", "batería", "bateria", "orinar", "chichi", "restroom", "bathroom"]):
+        target_category = "bathroom"
+    elif any(k in msg for k in ["policia", "policía", "cai", "seguridad", "denuncia", "robo", "perdido"]):
+        target_category = "cai"
+    elif any(k in msg for k in ["salud", "cruz roja", "primeros auxilios", "ambulancia", "hospital", "médico", "medico", "emergencia"]):
+        target_category = "health"
+    elif any(k in msg for k in ["restaurante", "comer", "comida", "cuy", "gastronomia", "gastronomía", "cafe", "café", "almorzar", "empanada"]):
+        target_category = "restaurant"
+    elif any(k in msg for k in ["tarima", "tarimas", "musica", "música", "concierto", "conciertos", "orquesta", "escenario", "baile"]):
+        target_category = "stage"
+
+    # Query nearest POIs sorted by Haversine distance
+    sorted_pois = get_nearest_pois(user_lat, user_lng, category=target_category)
+    closest_poi = sorted_pois[0] if sorted_pois else None
+
+    # Proximity string for reply
+    closest_phrase = ""
+    if closest_poi:
+        closest_phrase = (
+            f"Te encuentras a {int(closest_poi['distance_meters'])} metros ({closest_poi['proximity_label']}) "
+            f"de {closest_poi['name']}, el más cercano, ubicado en {closest_poi['address']}."
+        )
 
     # Case 1: Baños Públicos
-    if any(k in msg for k in ["baño", "baños", "sanitario", "sanitarios", "batería", "bateria", "orinar", "chichi", "restroom"]):
-        bathrooms = get_by_category("restroom")
+    if target_category == "bathroom":
         return {
             "reply": (
-                "¡A la orden, veci! Para que no pase apuros durante el jolgorio, en San Juan de Pasto cuenta con 4 baterías de baños públicos verificadas:\n"
-                "1. **Batería San Agustín**: Calle 19 con Cra 24 [1.2138, -77.2779] (Abierta de 8:00 AM a 9:00 PM con personal de aseo).\n"
-                "2. **Baños Plaza del Carnaval**: En el parqueadero subterráneo de la plaza [1.2132, -77.2783] (Servicio continuo con amplias cabinas).\n"
-                "3. **Baños Estadio Libertad**: Costado Occidental del estadio [1.2028, -77.2765] (Habilitados desde las 7:00 AM para la partida del desfile).\n"
-                "4. **Baños Plaza de Nariño**: Casa de Don Lorenzo en Carrera 26 con Calle 19 [1.2149, -77.2783] (Abiertos de 8:00 AM a 10:00 PM).\n"
-                "¡Ya se los dejo todos fijados en el mapa con sus direcciones exactas!"
+                f"¡A la orden, veci! {closest_phrase}\n\n"
+                "Para su tranquilidad durante la fiesta, aquí tiene las opciones más cercanas ordenadas por distancia:\n"
+                + "\n".join(
+                    f"• **{p['name']}**: {p['address']} — {p['proximity_label']} ({int(p['distance_meters'])} m)."
+                    for p in sorted_pois[:4]
+                )
+                + "\n\n¡Ya se los dejo todos fijados en el mapa con su ruta de acceso!"
             ),
             "schedule": schedule_data,
             "should_draw_route": True,
-            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in bathrooms],
-            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in bathrooms],
-            "nearby_places": bathrooms,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": sorted_pois,
             "suggested_questions": [
                 "¿Dónde queda el puesto de salud más cercano?",
                 "¿Cuál es el recorrido oficial de la Senda del Carnaval?",
@@ -192,21 +191,22 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
         }
 
     # Case 2: Seguridad / CAIs
-    if any(k in msg for k in ["policia", "policía", "cai", "seguridad", "denuncia", "robo", "perdido"]):
-        cais = get_by_category("police")
+    if target_category == "cai":
         return {
             "reply": (
-                "¡Tranquilo, paisano! La seguridad del Carnaval cuenta con puestos policiales CAI activos las 24 horas a lo largo del recorrido:\n"
-                "1. **CAI Plaza de Nariño**: En el Centro Histórico, esquina noroccidental de la plaza [1.2144, -77.2788] (Atención de cuadrante y extravíos).\n"
-                "2. **CAI Lorenzo de Aldana**: En la Glorieta Lorenzo con Carrera 4 [1.2092, -77.2768] (Vigilancia del sector sur y concentración inicial).\n"
-                "3. **CAI Morasurco**: Entrada Norte sobre la Avenida Santander [1.2298, -77.2835] (Apoyo en la llegada a Torobajo y Av. de los Estudiantes).\n"
-                "Recomendación carnavalera: mantenga sus pertenencias en bolsillos frontales con cremallera y proteja a los niños."
+                f"¡Tranquilo, paisano! {closest_phrase}\n\n"
+                "La Policía Metropolitana tiene puestos de vigilancia activa 24 horas cerca de su posición:\n"
+                + "\n".join(
+                    f"• **{p['name']}**: {p['address']} — {p['proximity_label']} ({int(p['distance_meters'])} m)."
+                    for p in sorted_pois[:3]
+                )
+                + "\n\nRecomendación carnavalera: cuide sus pertenencias y disfrute con alegría y respeto."
             ),
             "schedule": schedule_data,
             "should_draw_route": True,
-            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in cais],
-            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in cais],
-            "nearby_places": cais,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": sorted_pois,
             "suggested_questions": [
                 "¿Cuáles son las zonas de mayor aglomeración de gente?",
                 "¿Dónde quedan los puestos de primeros auxilios de la Cruz Roja?",
@@ -214,22 +214,23 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
             ]
         }
 
-    # Case 3: Salud / Cruz Roja / Primeros Auxilios / Hospital
-    if any(k in msg for k in ["salud", "cruz roja", "primeros auxilios", "ambulancia", "hospital", "médico", "medico", "emergencia"]):
-        health_spots = get_by_category("health")
+    # Case 3: Salud / Primeros Auxilios
+    if target_category == "health":
         return {
             "reply": (
-                "¡Para servirle, veci! La red de socorro y atención prehospitalaria está lista en los siguientes puntos estratégicos:\n"
-                "1. **Puesto Cruz Roja Plaza Carnaval**: Esquina Carrera 27 [1.2130, -77.2781] (Carpa de triage, ambulancia medicalizada y voluntarios de 8:00 AM a 11:00 PM).\n"
-                "2. **Puesto Defensa Civil San Felipe**: Calle 18 con Carrera 27 [1.2180, -77.2800] (Primeros auxilios e hidratación durante el desfile).\n"
-                "3. **Hospital Departamental de Nariño**: Calle 16 # 27-02 [1.2080, -77.2750] (Servicio de urgencias de tercer nivel 24 horas).\n"
-                "¡Use gafas protectoras contra el talco y carioca, y tome abundante agüita!"
+                f"¡Para servirle, veci! {closest_phrase}\n\n"
+                "Los puestos de auxilio médico y ambulancias más próximos a usted son:\n"
+                + "\n".join(
+                    f"• **{p['name']}**: {p['address']} — {p['proximity_label']} ({int(p['distance_meters'])} m)."
+                    for p in sorted_pois[:3]
+                )
+                + "\n\n¡Cuídese los ojitos del talco, manténgase hidratado y acuda a estos puntos ante cualquier percance!"
             ),
             "schedule": schedule_data,
             "should_draw_route": True,
-            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in health_spots],
-            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in health_spots],
-            "nearby_places": health_spots,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": sorted_pois,
             "suggested_questions": [
                 "¿Dónde quedan los baños cerca a la Plaza del Carnaval?",
                 "¿Cómo llegar a la Avenida de los Estudiantes?",
@@ -237,21 +238,23 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
             ]
         }
 
-    # Case 4: Restaurantes / Cafés / Gastronomía Típica
-    if any(k in msg for k in ["restaurante", "comer", "comida", "cuy", "gastronomia", "gastronomía", "cafe", "café", "almorzar", "empanada"]):
-        restaurants = get_by_category("restaurant")
+    # Case 4: Restaurantes / Gastronomía Típica
+    if target_category == "restaurant":
         return {
             "reply": (
-                "¡Uyyyy qué delicia, veci! Si de comer sabroso se trata en Pasto, aquí tiene los sitios recomendados en el trayecto:\n"
-                "1. **Restaurante El Paisano / Asadero**: Sector San Felipe, Calle 18 # 26-45 [1.2190, -77.2802] (El mejor cuy asado tradicional con papas pastusas, crispetas y ají de maní).\n"
-                "2. **Cafetería La Merced**: Calle 18 cerca a la Plaza de Nariño [1.2150, -77.2786] (Famosa por sus quimbolitos recién hechos, empanadas de añejo y café nariñense).\n"
-                "3. **Zona Gastronómica Avenida de los Estudiantes**: Entre Calles 19 y 22 [1.2270, -77.2828] (Corredor de asaderos, comidas rápidas y piqueteaderos abiertos durante todo el desfile)."
+                f"¡Uyyyy qué delicia, veci! {closest_phrase}\n\n"
+                "Si quiere deleitarse con la auténtica sazón nariñense, estos son los sitios más cercanos:\n"
+                + "\n".join(
+                    f"• **{p['name']}**: {p['address']} — {p['proximity_label']} ({int(p['distance_meters'])} m)."
+                    for p in sorted_pois[:3]
+                )
+                + "\n\n¡Pida cuy asado con papas pastusas o unas ricas empanadas de añejo!"
             ),
             "schedule": schedule_data,
             "should_draw_route": True,
-            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in restaurants],
-            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in restaurants],
-            "nearby_places": restaurants,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": sorted_pois,
             "suggested_questions": [
                 "¿Cuánto cuesta un plato de cuy típico en Pasto?",
                 "¿Dónde queda la Tarima Oficial de orquestas?",
@@ -259,21 +262,23 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
             ]
         }
 
-    # Case 5: Tarimas / Conciertos / Música
-    if any(k in msg for k in ["tarima", "tarimas", "musica", "música", "concierto", "conciertos", "orquesta", "escenario", "baile"]):
-        stages = get_by_category("stage")
+    # Case 5: Tarimas / Música
+    if target_category == "stage":
         return {
             "reply": (
-                "¡A bailar y a gozar con la Guaneña, paisano! Las tres tarimas oficiales del Carnaval están confirmadas:\n"
-                "1. **Tarima Oficial Plaza del Carnaval**: Plaza del Carnaval y la Cultura [1.2136, -77.2785] (Escenario principal de orquestas nacionales e internacionales y murgas).\n"
-                "2. **Tarima de la Danza y Tradición Plaza de Nariño**: Centro Histórico [1.2148, -77.2780] (Música autóctona, zampoñas, charangos y grupos de danza andina).\n"
-                "3. **Tarima del Carrizal**: Avenida Mijitayo [1.2225, -77.2815] (Escenario de son sureño, música campesina y bandas juveniles)."
+                f"¡A bailar y a gozar con la Guaneña, paisano! {closest_phrase}\n\n"
+                "Las tarimas oficiales para vibrar con la música del Carnaval más cercanas a usted son:\n"
+                + "\n".join(
+                    f"• **{p['name']}**: {p['address']} — {p['proximity_label']} ({int(p['distance_meters'])} m)."
+                    for p in sorted_pois[:3]
+                )
+                + "\n\n¡Venga a bailar al son de las mejores murgas y orquestas!"
             ),
             "schedule": schedule_data,
             "should_draw_route": True,
-            "route_coordinates": [[p["coordinates"][0], p["coordinates"][1]] for p in stages],
-            "waypoints": [[p["coordinates"][0], p["coordinates"][1]] for p in stages],
-            "nearby_places": stages,
+            "route_coordinates": SENDA_OFFICIAL_PATH,
+            "waypoints": SENDA_OFFICIAL_PATH,
+            "nearby_places": sorted_pois,
             "suggested_questions": [
                 "¿A qué hora empiezan las orquestas en la Plaza del Carnaval?",
                 "¿Dónde quedan los baños en la Plaza de Nariño?",
@@ -281,48 +286,35 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
             ]
         }
 
-    # Case 6: Recorrido Completo de la Senda
-    if any(k in msg for k in ["senda", "recorrido", "ruta", "trayecto", "camino", "desfile"]):
-        return {
-            "reply": (
-                "¡Qué viva Pasto, carajo, veci! Aquí le tengo el trazado calle a calle con máxima precisión de la Senda del Carnaval:\n"
-                "• **Partida**: Estadio Departamental Libertad [1.2025, -77.2762].\n"
-                "• **Subida**: Calle 2 / Carrera 4 hasta la Glorieta Lorenzo de Aldana [1.2095, -77.2770].\n"
-                "• **Bajada**: Calle 19 pasando por la emblemática Plaza del Carnaval [1.2136, -77.2785].\n"
-                "• **Giro céntrico**: Carrera 27 pasando junto a la Plaza de Nariño [1.2148, -77.2780].\n"
-                "• **Tramo norte**: Subida por Calle 18 hasta San Felipe [1.2220, -77.2810], conectando con Carrera 40 y la Avenida de los Estudiantes.\n"
-                "• **Llegada**: Fuente de la Transparencia / Glorieta Torobajo [1.2330, -77.2845].\n"
-                "¡Son cerca de 7 kilómetros de emoción! Además le incluyo en el mapa todos los baños, puestos de auxilio y CAIs de policía."
-            ),
-            "schedule": schedule_data,
-            "should_draw_route": True,
-            "route_coordinates": SENDA_OFFICIAL_PATH,
-            "waypoints": SENDA_OFFICIAL_PATH,
-            "nearby_places": PASTO_PLACES_DIRECTORY,
-            "suggested_questions": [
-                "¿Dónde quedan los baños públicos en la ruta?",
-                "¿Dónde están ubicados los puestos de la Cruz Roja?",
-                "¿A qué hora arranca el desfile del 6 de enero?"
-            ]
-        }
+    # Case 6: Recorrido Completo de la Senda o General
+    all_sorted = get_nearest_pois(user_lat, user_lng)
+    nearest_general = all_sorted[0] if all_sorted else None
+    gen_phrase = (
+        f"Te encuentras a {int(nearest_general['distance_meters'])} metros ({nearest_general['proximity_label']}) "
+        f"de {nearest_general['name']}."
+    ) if nearest_general else ""
 
-    # Default friendly Pastuso response
     return {
         "reply": (
-            "¡Qué viva Pasto, carajo, veci! Soy GuaneñaBot, su guía oficial del Carnaval de Negros y Blancos. "
-            "Le tengo el mapa exacto calle a calle de la Senda del Carnaval y el directorio completo de Pasto con ubicaciones verificadas: "
-            "baños públicos (🚻), puestos de salud de la Cruz Roja (🚑), CAIs de policía (👮), restaurantes típicos de cuy (🍴) "
-            "y tarimas musicales (🎪). ¿Qué punto o evento desea consultar?"
+            f"¡Qué viva Pasto, carajo, veci! {gen_phrase}\n\n"
+            "Aquí le tengo la ruta completa oficial de la Senda del Carnaval (7 km):\n"
+            "• **Partida**: Estadio Libertad [1.2025, -77.2762]\n"
+            "• **Subida**: Cra 4 hasta Lorenzo de Aldana [1.2095, -77.2770]\n"
+            "• **Bajada**: Calle 19 pasando por la Plaza del Carnaval [1.2136, -77.2785]\n"
+            "• **Giro**: Cra 27 junto a la Plaza de Nariño [1.2148, -77.2780]\n"
+            "• **Norte**: Calle 18 hasta San Felipe [1.2220, -77.2810] y Av. de los Estudiantes\n"
+            "• **Llegada**: Fuente de la Transparencia / Torobajo [1.2330, -77.2845]\n\n"
+            "¡Le incluyo en el mapa la polilínea completa y los puntos de interés ordenados por cercanía a su GPS!"
         ),
         "schedule": schedule_data,
         "should_draw_route": True,
         "route_coordinates": SENDA_OFFICIAL_PATH,
         "waypoints": SENDA_OFFICIAL_PATH,
-        "nearby_places": PASTO_PLACES_DIRECTORY,
+        "nearby_places": all_sorted,
         "suggested_questions": [
             "¿Dónde quedan los baños públicos autorizados?",
             "¿Dónde puedo comer cuy típico cerca a la Senda?",
-            "¿Cuál es el recorrido exacto de la Senda del Carnaval?"
+            "¿A qué hora arranca el desfile del 6 de enero?"
         ]
     }
 
@@ -330,18 +322,35 @@ def _deterministic_fallback(message: str) -> Dict[str, Any]:
 # ==============================================================================
 # MAIN CONVERSATIONAL DISPATCHER FUNCTION
 # ==============================================================================
-def chat_with_guanena(message: str, chat_history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
-    """Execute conversational dispatching using Gemini 2.5 Flash with deterministic GIS fallback.
+def chat_with_guanena(
+    message: str,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+    user_lat: Optional[float] = 1.2148,
+    user_lng: Optional[float] = -77.2780,
+    requested_day: Optional[str] = "4 de enero"
+) -> Dict[str, Any]:
+    """Execute conversational dispatching using Gemini 2.5 Flash with real-time GPS telemetry.
 
     Args:
-        message: The natural language prompt from the user.
+        message: Natural language prompt from the user.
         chat_history: Optional list of previous message turns.
+        user_lat: Real-time user GPS latitude (defaults to Plaza de Nariño).
+        user_lng: Real-time user GPS longitude (defaults to Plaza de Nariño).
+        requested_day: Optional carnival day of interest.
 
     Returns:
-        Dict matching CarnavalChatResponse schema with schedule, route, and verified nearby places.
+        Dict matching CarnavalChatResponse schema with schedule, route, and sorted nearby places.
     """
     if chat_history is None:
         chat_history = []
+
+    if user_lat is None:
+        user_lat = 1.2148
+    if user_lng is None:
+        user_lng = -77.2780
+
+    # Compute nearest POIs from user's current GPS position
+    nearby_sorted = get_nearest_pois(user_lat, user_lng)
 
     api_key = settings.GEMINI_API_KEY.strip() if hasattr(settings, "GEMINI_API_KEY") else ""
     if not api_key:
@@ -361,10 +370,22 @@ def chat_with_guanena(message: str, chat_history: Optional[List[Dict[str, str]]]
                 )
                 history_context = f"\nPrevious Conversation:\n{formatted_history}\n"
 
+            closest_pois_summary = "\n".join(
+                f"- {p['name']} ({p['category']}): {p['address']} a {int(p['distance_meters'])} m ({p['proximity_label']})"
+                for p in nearby_sorted[:5]
+            )
+
             prompt_content = f"""{history_context}
+User Real-time GPS Location: [{user_lat}, {user_lng}]
+Requested Day: "{requested_day}"
 User Query: "{message}"
 
-Please respond according to your persona and structured JSON schema including schedule, route_coordinates, and verified nearby_places with address.
+Closest Verified Points of Interest to User:
+{closest_pois_summary}
+
+Instructions:
+Explicitly name the single closest facility with exact meters/blocks away: "Te encuentras a X metros de [Lugar], el más cercano es...".
+Always return SENDA_OFFICIAL_PATH in route_coordinates whenever the user asks for the Senda, dates, or navigation.
 """
 
             response = client.models.generate_content(
@@ -383,24 +404,24 @@ Please respond according to your persona and structured JSON schema including sc
                 data = json.loads(cleaned_text)
 
                 route_coords = data.get("route_coordinates", [])
-                if not route_coords and data.get("should_draw_route"):
+                if not route_coords:
                     route_coords = SENDA_OFFICIAL_PATH
 
                 schedule_obj = data.get("schedule")
                 if not schedule_obj:
-                    schedule_obj = get_schedule_for_query(message)
+                    schedule_obj = get_schedule_for_query(requested_day or message)
 
-                nearby_places = data.get("nearby_places", [])
-                if not nearby_places:
-                    nearby_places = PASTO_PLACES_DIRECTORY
+                places_out = data.get("nearby_places", [])
+                if not places_out:
+                    places_out = nearby_sorted
 
                 return {
                     "reply": data.get("reply", "¡Qué viva Pasto, carajo!"),
                     "schedule": schedule_obj,
-                    "should_draw_route": bool(data.get("should_draw_route", False)),
+                    "should_draw_route": True,
                     "route_coordinates": route_coords,
                     "waypoints": route_coords,
-                    "nearby_places": nearby_places,
+                    "nearby_places": places_out,
                     "suggested_questions": data.get("suggested_questions", [
                         "¿Dónde quedan los baños públicos autorizados?",
                         "¿Dónde puedo comer cuy típico cerca a la Senda?",
@@ -410,8 +431,13 @@ Please respond according to your persona and structured JSON schema including sc
         except Exception as exc:
             logger.warning(
                 f"[GEMINI_SERVICE] Notice while querying Gemini 2.5 Flash ({type(exc).__name__}: {exc}). "
-                "Engaging deterministic cultural GIS fallback."
+                "Engaging deterministic cultural GIS fallback with Haversine proximity."
             )
 
     # Deterministic fallback when Gemini API is unavailable or offline
-    return _deterministic_fallback(message)
+    return _deterministic_fallback(
+        message=message,
+        user_lat=user_lat,
+        user_lng=user_lng,
+        requested_day=requested_day
+    )

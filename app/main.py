@@ -144,7 +144,10 @@ def carnaval_chat(payload: CarnavalChatRequest) -> CarnavalChatResponse:
     """Handle conversational chat with GuaneñaBot extracting GIS route waypoints and telemetry."""
     result = chat_with_guanena(
         message=payload.message,
-        chat_history=payload.history or []
+        chat_history=payload.history or [],
+        user_lat=payload.user_lat,
+        user_lng=payload.user_lng,
+        requested_day=payload.requested_day
     )
     route_coords = result.get("route_coordinates") or result.get("waypoints", [])
     return CarnavalChatResponse(
