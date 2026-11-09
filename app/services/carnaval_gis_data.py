@@ -1,11 +1,10 @@
-"""Official GIS landmarks, high-precision street-level route coordinates, and verified Pasto directory.
+"""Official GIS landmarks, strict Senda waypoints, and proximity locator for San Juan de Pasto.
 
-Provides exact street-by-street coordinates for the official Senda del Carnaval
-path and a comprehensive directory of verified urban points of interest in San Juan de Pasto:
-bathrooms, police CAIs, emergency health posts, traditional restaurants/cafés,
-stages/plazas, shopping centers, and crowd congestion risk zones.
+Stores the official Senda del Carnaval sequential polyline and provides real-time
+spatial proximity sorting against verified local points of interest.
 """
 from typing import Any, Dict, List, Optional
+from app.services.spatial_utils import calculate_distance_meters, format_proximity_label
 
 
 # ---------------------------------------------------------------------------
@@ -26,20 +25,20 @@ SENDA_FINISH: Dict[str, Any] = {
     "description": "Punto de culminación oficial del desfile y llegada a la zona de desconcentración en Torobajo.",
 }
 
-# High-precision street-by-street path of La Senda (Strictly [latitude, longitude])
+# Strict Senda sequential path coordinates strictly in [latitude, longitude] format
 SENDA_OFFICIAL_PATH: List[List[float]] = [
-    [1.2025, -77.2762],  # Start: Estadio Libertad
-    [1.2060, -77.2766],  # Subida por la Calle 2 / Carrera 4
+    [1.2025, -77.2762],  # Estadio Libertad (Salida)
+    [1.2058, -77.2766],  # Cra 4
     [1.2095, -77.2770],  # Glorieta Lorenzo de Aldana
-    [1.2115, -77.2778],  # Bajada por la Calle 19
-    [1.2136, -77.2785],  # Paso por Plaza del Carnaval y la Cultura
-    [1.2140, -77.2782],  # Giro a Carrera 27
+    [1.2115, -77.2778],  # Calle 19
+    [1.2136, -77.2785],  # Plaza del Carnaval
+    [1.2140, -77.2782],  # Cra 27
     [1.2148, -77.2780],  # Plaza de Nariño
-    [1.2185, -77.2798],  # Subida por la Calle 18 hasta San Felipe
-    [1.2220, -77.2810],  # Sector San Felipe
-    [1.2260, -77.2825],  # Carrera 40 y Avenida de los Estudiantes
-    [1.2295, -77.2838],  # Avenida de los Estudiantes hacia el norte
-    [1.2330, -77.2845],  # Llegada Fuente de la Transparencia / Glorieta Torobajo
+    [1.2185, -77.2798],  # Calle 18
+    [1.2220, -77.2810],  # San Felipe
+    [1.2260, -77.2825],  # Avenida de los Estudiantes
+    [1.2295, -77.2838],  # Carrera 40
+    [1.2330, -77.2845],  # Fuente de la Transparencia / Torobajo (Llegada)
 ]
 
 
@@ -48,54 +47,54 @@ SENDA_OFFICIAL_PATH: List[List[float]] = [
 # ---------------------------------------------------------------------------
 
 PASTO_PLACES_DIRECTORY: List[Dict[str, Any]] = [
-    # ------------------ Baños Públicos (restroom) ------------------
+    # ------------------ Baños Públicos (bathroom) ------------------
     {
         "name": "Batería San Agustín",
-        "category": "restroom",
+        "category": "bathroom",
         "coordinates": [1.2138, -77.2779],
         "address": "Calle 19 con Carrera 24, cerca al Templo San Agustín",
         "description": "Batería de baños públicos habilitada con personal de aseo y vigilancia permanente.",
     },
     {
         "name": "Baños Plaza del Carnaval",
-        "category": "restroom",
+        "category": "bathroom",
         "coordinates": [1.2132, -77.2783],
         "address": "Parqueadero subterráneo Plaza del Carnaval",
         "description": "Batería sanitaria amplia subterránea con acceso a rampas y cabinas múltiples.",
     },
     {
         "name": "Baños Estadio Libertad",
-        "category": "restroom",
+        "category": "bathroom",
         "coordinates": [1.2028, -77.2765],
         "address": "Costado Occidental Estadio Departamental Libertad",
         "description": "Servicios sanitarios de la zona sur habilitados durante el inicio de los desfiles.",
     },
     {
         "name": "Baños Plaza de Nariño",
-        "category": "restroom",
+        "category": "bathroom",
         "coordinates": [1.2149, -77.2783],
         "address": "Casa de Don Lorenzo, Carrera 26 con Calle 19",
         "description": "Módulos sanitarios céntricos ubicados a pocos metros del monumento a Nariño.",
     },
 
-    # ------------------ Seguridad y CAIs (police) ------------------
+    # ------------------ Seguridad y CAIs (cai) ------------------
     {
         "name": "CAI Plaza de Nariño",
-        "category": "police",
+        "category": "cai",
         "coordinates": [1.2144, -77.2788],
         "address": "Centro Histórico, esquina noroccidental Plaza de Nariño",
         "description": "Atención policial inmediata, cuadrante centro histórico, recepción de denuncias y niños extraviados.",
     },
     {
         "name": "CAI Lorenzo de Aldana",
-        "category": "police",
+        "category": "cai",
         "coordinates": [1.2092, -77.2768],
         "address": "Glorieta Lorenzo de Aldana con Carrera 4",
         "description": "Puesto de control policial del sector sur para seguridad del primer tramo de la Senda.",
     },
     {
         "name": "CAI Morasurco",
-        "category": "police",
+        "category": "cai",
         "coordinates": [1.2298, -77.2835],
         "address": "Entrada Norte, Avenida Santander / Panamericana",
         "description": "Puesto policial del sector norte para apoyo y vigilancia en la Avenida de los Estudiantes y Torobajo.",
@@ -198,6 +197,95 @@ PASTO_PLACES_DIRECTORY: List[Dict[str, Any]] = [
 
 # Alias for backwards compatibility
 NEARBY_SERVICE_POINTS: List[Dict[str, Any]] = PASTO_PLACES_DIRECTORY
+
+
+# ---------------------------------------------------------------------------
+# Spatial Proximity Locator Engine
+# ---------------------------------------------------------------------------
+
+CATEGORY_ALIASES: Dict[str, str] = {
+    "bathroom": "bathroom",
+    "baño": "bathroom",
+    "baños": "bathroom",
+    "restroom": "bathroom",
+    "sanitario": "bathroom",
+    "sanitarios": "bathroom",
+    "cai": "cai",
+    "police": "cai",
+    "policia": "cai",
+    "policía": "cai",
+    "seguridad": "cai",
+    "health": "health",
+    "salud": "health",
+    "cruz roja": "health",
+    "hospital": "health",
+    "restaurant": "restaurant",
+    "restaurante": "restaurant",
+    "restaurantes": "restaurant",
+    "comida": "restaurant",
+    "cuy": "restaurant",
+    "cafe": "restaurant",
+    "café": "restaurant",
+    "stage": "stage",
+    "tarima": "stage",
+    "tarimas": "stage",
+    "concierto": "stage",
+    "musica": "stage",
+    "música": "stage",
+    "shopping": "shopping",
+    "comercial": "shopping",
+    "risk_zone": "risk_zone",
+    "riesgo": "risk_zone",
+    "aglomeracion": "risk_zone",
+}
+
+
+def get_nearest_pois(
+    user_lat: float,
+    user_lng: float,
+    category: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Calculate Haversine distance, sort from closest to furthest, and attach proximity labels.
+
+    Args:
+        user_lat: User real-time GPS latitude.
+        user_lng: User real-time GPS longitude.
+        category: Optional category filter (e.g. 'bathroom', 'cai', 'health', 'restaurant', 'stage').
+
+    Returns:
+        Sorted list of POIs with 'distance_meters' and human-readable 'proximity_label'.
+    """
+    target_category = None
+    if category:
+        norm_cat = category.lower().strip()
+        target_category = CATEGORY_ALIASES.get(norm_cat, norm_cat)
+
+    enriched_pois: List[Dict[str, Any]] = []
+
+    for poi in PASTO_PLACES_DIRECTORY:
+        poi_cat = poi.get("category", "")
+        # Filter if category was requested
+        if target_category and poi_cat != target_category:
+            # Also allow fallback if category was 'police' and poi_cat is 'cai', or 'restroom' vs 'bathroom'
+            if target_category == "bathroom" and poi_cat != "bathroom" and poi_cat != "restroom":
+                continue
+            elif target_category == "cai" and poi_cat != "cai" and poi_cat != "police":
+                continue
+            elif target_category != poi_cat:
+                continue
+
+        coords = poi["coordinates"]
+        dist = calculate_distance_meters(user_lat, user_lng, coords[0], coords[1])
+        label = format_proximity_label(dist)
+
+        poi_copy = dict(poi)
+        poi_copy["distance_meters"] = dist
+        poi_copy["proximity_label"] = label
+        enriched_pois.append(poi_copy)
+
+    # Sort from nearest to furthest
+    enriched_pois.sort(key=lambda p: p["distance_meters"])
+    return enriched_pois
 
 
 # ---------------------------------------------------------------------------
