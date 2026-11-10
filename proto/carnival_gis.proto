@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package carnival;
+
+// Geographic coordinate and query filter request
+message GeoRequest {
+    double latitude = 1;
+    double longitude = 2;
+    string category = 3;
+    int32 limit = 4;
+}
+
+// Georeferenced Point of Interest representation
+message POI {
+    string name = 1;
+    string category = 2;
+    double latitude = 3;
+    double longitude = 4;
+    string address = 5;
+    string description = 6;
+    double distance_meters = 7;
+    string proximity_label = 8;
+}
+
+// Response payload with nearest POIs and proximity metrics
+message POIResponse {
+    repeated POI pois = 1;
+    POI closest_poi = 2;
+    int32 total_found = 3;
+    string user_location = 4;
+}
+
+// Generic parameterless message
+message Empty {}
+
+// Telemetry stream point representing Senda del Carnaval waypoints
+message TelemetryPoint {
+    int32 sequence_index = 1;
+    double latitude = 2;
+    double longitude = 3;
+    string landmark_name = 4;
+    string street_reference = 5;
+    string timestamp = 6;
+}
+
+// High-performance binary RPC service for Carnival GIS operations
+service CarnivalGIS {
+    // Unary RPC: returns nearest points of interest sorted by Haversine distance
+    rpc GetNearestPOIs (GeoRequest) returns (POIResponse);
+
+    // Server Streaming RPC: streams parade route telemetry waypoints
+    rpc StreamTelemetry (Empty) returns (stream TelemetryPoint);
+}
