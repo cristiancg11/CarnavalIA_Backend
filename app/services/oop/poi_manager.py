@@ -96,3 +96,4 @@ class POIManager:
         """
         results = self.find_nearest_pois(user_lat, user_lng, category=category, limit=1)
         return results[0] if results else None
+

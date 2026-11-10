@@ -607,16 +607,30 @@ CONTEXTO ADICIONAL:
 Día seleccionado en frontend: {selected_day or 'Ninguno'}
 """
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=GUANENA_BOT_SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_schema=StructuredChatResponse,
-                    temperature=0.35,
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=GUANENA_BOT_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=StructuredChatResponse,
+                        temperature=0.35,
+                    )
                 )
-            )
+            except Exception as primary_err:
+                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-1.5-flash...")
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=GUANENA_BOT_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=StructuredChatResponse,
+                        temperature=0.35,
+                    )
+                )
 
             if response and response.text:
                 parsed = _clean_and_parse_json(response.text)

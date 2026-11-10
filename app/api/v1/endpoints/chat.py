@@ -23,7 +23,7 @@ router = APIRouter()
     description=(
         "Recibe una consulta ciudadana o turística junto con la ubicación geográfica opcional del usuario. "
         "Consulta la base de datos en tiempo real (puntos de interés, puestos de salud/seguridad y reportes recientes) "
-        "y genera una respuesta contextualizada mediante Google Gemini (gemini-2.5-flash)."
+        "y genera una respuesta contextualizada mediante Google Gemini (gemini-2.0-flash)."
     )
 )
 def chat_with_carnaval_assistant(

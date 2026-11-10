@@ -76,3 +76,4 @@ class HaversineGISService(BaseGISService):
             List of [latitude, longitude] pairs.
         """
         return [list(coord) for coord in SENDA_OFFICIAL_PATH]
+

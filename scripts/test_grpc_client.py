@@ -98,3 +98,4 @@ def run_grpc_client_test(port: int = 50052):
 if __name__ == "__main__":
     test_port = int(sys.argv[1]) if len(sys.argv) > 1 else 50052
     run_grpc_client_test(port=test_port)
+

@@ -51,3 +51,4 @@ service CarnivalGIS {
     // Server Streaming RPC: streams parade route telemetry waypoints
     rpc StreamTelemetry (Empty) returns (stream TelemetryPoint);
 }
+

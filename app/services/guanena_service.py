@@ -281,16 +281,30 @@ def process_guanena_chat(request: ChatRequest) -> ChatResponse:
 {loc_context}
 """
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=GUANENA_SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_schema=ChatResponse,
-                    temperature=0.3,
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=GUANENA_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=ChatResponse,
+                        temperature=0.3,
+                    )
                 )
-            )
+            except Exception as primary_err:
+                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-1.5-flash...")
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=GUANENA_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=ChatResponse,
+                        temperature=0.3,
+                    )
+                )
 
             if response and response.text:
                 parsed = _parse_gemini_json_response(response.text)

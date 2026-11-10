@@ -10,3 +10,4 @@ from app.services.grpc_service import serve
 if __name__ == "__main__":
     port = int(os.getenv("GRPC_PORT", 50051))
     serve(port=port)
+

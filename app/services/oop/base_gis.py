@@ -41,3 +41,4 @@ class BaseGISService(ABC):
             List of [latitude, longitude] pairs.
         """
         pass
+

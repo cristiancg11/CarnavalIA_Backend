@@ -1,5 +1,5 @@
 """Servicio de Chatbot Inteligente para el Carnaval de Negros y Blancos de Pasto.
-Redirige y expone las capacidades completas de RAG con Gemini 2.5 Flash desde chat_service.
+Redirige y expone las capacidades completas de RAG con Gemini 2.0 Flash desde chat_service.
 """
 from app.services.chat_service import (
     generate_chat_response,

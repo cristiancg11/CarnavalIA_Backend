@@ -29,7 +29,7 @@ DEFAULT_FALLBACK_ANALYSIS: Dict[str, Any] = {
 def analyze_report_risk(title: str, description: str) -> Dict[str, Any]:
     """Analiza el título y la descripción de un reporte ciudadano del Carnaval
 
-    de Negros y Blancos de Pasto utilizando el modelo gemini-2.5-flash.
+    de Negros y Blancos de Pasto utilizando el modelo gemini-2.0-flash.
 
     Retorna un diccionario con:
     - risk_level: "Bajo", "Medio" o "Alto"
@@ -57,14 +57,26 @@ Determina la criticidad y categorización. Debes responder con un JSON que conte
 3. "summary": Un resumen claro y conciso de la situación en 1 sola oración en español.
 """
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
+        model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                )
             )
-        )
+        except Exception as primary_err:
+            logger.warning(f"Error con {model_name}: {primary_err}. Reintentando con gemini-1.5-flash...")
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                )
+            )
 
         if not response or not response.text:
             logger.warning("Respuesta vacía recibida de Gemini. Usando fallback.")

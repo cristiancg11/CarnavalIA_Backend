@@ -80,3 +80,4 @@ class TelemetryStreamer:
             if interval_seconds > 0.0:
                 time.sleep(interval_seconds)
             yield pt
+
