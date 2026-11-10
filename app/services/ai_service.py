@@ -57,7 +57,7 @@ Determina la criticidad y categorización. Debes responder con un JSON que conte
 3. "summary": Un resumen claro y conciso de la situación en 1 sola oración en español.
 """
 
-        model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
         try:
             response = client.models.generate_content(
                 model=model_name,
@@ -68,9 +68,9 @@ Determina la criticidad y categorización. Debes responder con un JSON que conte
                 )
             )
         except Exception as primary_err:
-            logger.warning(f"Error con {model_name}: {primary_err}. Reintentando con gemini-1.5-flash...")
+            logger.warning(f"Error con {model_name}: {primary_err}. Reintentando con gemini-3.1-flash-lite...")
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.1-flash-lite",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",

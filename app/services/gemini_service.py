@@ -388,7 +388,7 @@ Explicitly name the single closest facility with exact meters/blocks away: "Te e
 Always return SENDA_OFFICIAL_PATH in route_coordinates whenever the user asks for the Senda, dates, or navigation.
 """
 
-            model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -401,9 +401,9 @@ Always return SENDA_OFFICIAL_PATH in route_coordinates whenever the user asks fo
                     )
                 )
             except Exception as primary_err:
-                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-1.5-flash...")
+                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-3.1-flash-lite...")
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",
+                    model="gemini-3.1-flash-lite",
                     contents=prompt_content,
                     config=types.GenerateContentConfig(
                         system_instruction=GUANENA_SYSTEM_PROMPT,

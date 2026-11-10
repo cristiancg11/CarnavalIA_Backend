@@ -281,7 +281,7 @@ def process_guanena_chat(request: ChatRequest) -> ChatResponse:
 {loc_context}
 """
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -294,9 +294,9 @@ def process_guanena_chat(request: ChatRequest) -> ChatResponse:
                     )
                 )
             except Exception as primary_err:
-                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-1.5-flash...")
+                logger.warning(f"Aviso con {model_name} ({primary_err}). Reintentando con gemini-3.1-flash-lite...")
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",
+                    model="gemini-3.1-flash-lite",
                     contents=user_prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=GUANENA_SYSTEM_PROMPT,
