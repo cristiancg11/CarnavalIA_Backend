@@ -293,47 +293,75 @@ def get_nearest_pois(
 # ---------------------------------------------------------------------------
 
 CARNAVAL_SCHEDULES: Dict[str, Dict[str, str]] = {
-    "jan_02": {
+    "dec_28": {
+        "start_time": "08:00 AM",
+        "estimated_arrival_time": "06:00 PM",
+        "start_location": "Sector El Colorado (Calle 18 / Carrera 23)",
+        "finish_location": "Centro Histórico de Pasto",
+        "event_name": "Día de los Inocentes y Arcoíris en el Asfalto",
+    },
+    "dec_29": {
+        "start_time": "03:00 PM",
+        "estimated_arrival_time": "11:00 PM",
+        "start_location": "Plaza de Nariño",
+        "finish_location": "Plaza del Carnaval y la Cultura",
+        "event_name": "Concierto de Música Latinoamericana",
+    },
+    "dec_30": {
+        "start_time": "05:00 PM",
+        "estimated_arrival_time": "11:30 PM",
+        "start_location": "Plaza de Nariño (Tarima de Tríos)",
+        "finish_location": "Plaza de Nariño",
+        "event_name": "Serenata a Pasto",
+    },
+    "dec_31": {
         "start_time": "09:00 AM",
-        "estimated_arrival_time": "01:30 PM",
-        "start_location": "Templo San Juan Bautista",
-        "finish_location": "Santuario de Nuestra Señora de las Mercedes",
-        "event_name": "Ofrenda a la Virgen de las Mercedes y Carnavalito",
+        "estimated_arrival_time": "04:00 PM",
+        "start_location": "Escuela Normal Superior / Senda Sur",
+        "finish_location": "Sector Champagnat (Llegada)",
+        "event_name": "Desfile de Años Viejos",
+    },
+    "jan_02": {
+        "start_time": "08:30 AM",
+        "estimated_arrival_time": "02:00 PM",
+        "start_location": "Templo San Juan hacia Santuario Las Mercedes",
+        "finish_location": "Santuario de Nuestra Señora de las Mercedes / Champagnat",
+        "event_name": "Carnavalito y Ofrenda a la Virgen de las Mercedes",
     },
     "jan_03": {
-        "start_time": "10:00 AM",
-        "estimated_arrival_time": "03:00 PM",
+        "start_time": "09:00 AM",
+        "estimated_arrival_time": "04:00 PM",
         "start_location": "Estadio Departamental Libertad",
         "finish_location": "Plaza del Carnaval y la Cultura",
-        "event_name": "Canto a la Tierra (Desfile de Colectivos Coreográficos)",
+        "event_name": "Día del Canto a la Tierra y Colectivos Coreográficos",
     },
     "jan_04": {
         "start_time": "10:00 AM",
         "estimated_arrival_time": "03:30 PM",
         "start_location": "Estadio Departamental Libertad",
-        "finish_location": "Avenida de los Estudiantes",
+        "finish_location": "Avenida de los Estudiantes / Champagnat",
         "event_name": "Llegada de la Familia Castañeda",
     },
     "jan_05": {
         "start_time": "08:00 AM",
         "estimated_arrival_time": "08:00 PM",
-        "start_location": "Plaza de Nariño",
+        "start_location": "Plaza de Nariño y Plaza del Carnaval",
         "finish_location": "Plazas y Comunas de Pasto",
-        "event_name": "Día de Negros (Juego de Cosmético e Identidad)",
+        "event_name": "Día de los Negros (Juego de Caricias)",
     },
     "jan_06": {
         "start_time": "09:00 AM",
         "estimated_arrival_time": "04:30 PM",
         "start_location": "Estadio Departamental Libertad",
         "finish_location": "Avenida de los Estudiantes / Torobajo",
-        "event_name": "Desfile Magno (Día de Blancos - Carrozas Monumentales)",
+        "event_name": "Día de los Blancos (Desfile Magno)",
     },
     "jan_07": {
         "start_time": "10:00 AM",
-        "estimated_arrival_time": "06:00 PM",
+        "estimated_arrival_time": "07:00 PM",
         "start_location": "Catambuco y Obonuco",
         "finish_location": "Corregimientos del Sur",
-        "event_name": "Festival del Cuy y la Cultura Campesina",
+        "event_name": "Día del Cuy y Festival Campesino / Remate",
     },
 }
 
@@ -341,17 +369,25 @@ CARNAVAL_SCHEDULES: Dict[str, Dict[str, str]] = {
 def get_schedule_for_query(text: str) -> Dict[str, str]:
     """Infer the appropriate schedule based on keywords in user prompt."""
     query_lower = text.lower()
-    if any(k in query_lower for k in ["6 de enero", "magno", "blancos", "carroza"]):
-        return CARNAVAL_SCHEDULES["jan_06"]
-    if any(k in query_lower for k in ["5 de enero", "negros", "cosmetico", "juego"]):
-        return CARNAVAL_SCHEDULES["jan_05"]
-    if any(k in query_lower for k in ["4 de enero", "castañeda", "castaneda", "pericles"]):
-        return CARNAVAL_SCHEDULES["jan_04"]
-    if any(k in query_lower for k in ["3 de enero", "canto a la tierra", "coreografico", "danzantes"]):
-        return CARNAVAL_SCHEDULES["jan_03"]
+    if any(k in query_lower for k in ["28 de diciembre", "28 dic", "arcoiris", "arcoíris", "inocentes", "colorado"]):
+        return CARNAVAL_SCHEDULES["dec_28"]
+    if any(k in query_lower for k in ["29 de diciembre", "29 dic", "latinoamericana", "música andina", "musica andina"]):
+        return CARNAVAL_SCHEDULES["dec_29"]
+    if any(k in query_lower for k in ["30 de diciembre", "30 dic", "serenata", "trios", "tríos"]):
+        return CARNAVAL_SCHEDULES["dec_30"]
+    if any(k in query_lower for k in ["31 de diciembre", "31 dic", "año viejo", "años viejos", "viudas"]):
+        return CARNAVAL_SCHEDULES["dec_31"]
     if any(k in query_lower for k in ["2 de enero", "carnavalito", "mercedes", "ofrenda"]):
         return CARNAVAL_SCHEDULES["jan_02"]
-    if any(k in query_lower for k in ["7 de enero", "cuy", "catambuco", "obonuco"]):
+    if any(k in query_lower for k in ["3 de enero", "canto a la tierra", "coreografico", "coreográfico", "danzantes", "pachamama"]):
+        return CARNAVAL_SCHEDULES["jan_03"]
+    if any(k in query_lower for k in ["4 de enero", "castañeda", "castaneda", "pericles"]):
+        return CARNAVAL_SCHEDULES["jan_04"]
+    if any(k in query_lower for k in ["5 de enero", "negros", "cosmetico", "cosmético", "caricias", "juego"]):
+        return CARNAVAL_SCHEDULES["jan_05"]
+    if any(k in query_lower for k in ["6 de enero", "magno", "blancos", "carroza"]):
+        return CARNAVAL_SCHEDULES["jan_06"]
+    if any(k in query_lower for k in ["7 de enero", "cuy", "catambuco", "obonuco", "remate", "campesino"]):
         return CARNAVAL_SCHEDULES["jan_07"]
 
     # Default to the most requested flagship event: Desfile Magno (Jan 6)

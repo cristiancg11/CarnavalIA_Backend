@@ -167,6 +167,40 @@ def deterministic_guanena_fallback(message: str) -> ChatResponse:
             )
         )
 
+    # 6b. 29 de Diciembre / Concierto de Música Latinoamericana
+    if re.search(r"(29\s*(de\s*)?dic|veintinueve\s*de\s*diciembre|m[uú]sica\s*latinoamericana|concierto\s*andino)", msg):
+        ev = CARNAVAL_EVENTS["dec_29"]
+        return ChatResponse(
+            reply=(
+                "¡Notas sagradas de los Andes, veci! El 29 de diciembre vibramos con el Concierto de Música Latinoamericana en la Plaza de Nariño y Plaza del Carnaval. "
+                "Agrupaciones folclóricas rinden tributo a nuestras raíces ancestrales con quenas, zampoñas, charangos y tambores en un homenaje de hermandad continental."
+            ),
+            map_action=MapAction(
+                action_type="ROUTE_TO_EVENT_START",
+                target_name=f"Concierto Música Latinoamericana ({ev['start_location']})",
+                target_coords=ev["start_coords"],
+                event_date=ev["event_date"],
+                category=ev["category"]
+            )
+        )
+
+    # 6c. 30 de Diciembre / Serenata a Pasto
+    if re.search(r"(30\s*(de\s*)?dic|treinta\s*de\s*diciembre|serenata|tr[ií]os|cuerdas)", msg):
+        ev = CARNAVAL_EVENTS["dec_30"]
+        return ChatResponse(
+            reply=(
+                "¡Una noche de gala y romanticismo, veci! El 30 de diciembre celebramos la tradicional Serenata a Pasto en la Plaza de Nariño. "
+                "Los más insignes tríos de guitarras y requintos de Nariño y Colombia deleitan a la 'Ciudad Teológica' con boleros, valses y bambucos en un sentido homenaje de amor a nuestra tierra."
+            ),
+            map_action=MapAction(
+                action_type="ROUTE_TO_EVENT_START",
+                target_name=f"Serenata a Pasto ({ev['start_location']})",
+                target_coords=ev["start_coords"],
+                event_date=ev["event_date"],
+                category=ev["category"]
+            )
+        )
+
     # 7. 31 de Diciembre / Años Viejos
     if re.search(r"(31\s*(de\s*)?dic|treinta\s*y\s*uno\s*de\s*diciembre|a[ñn]o\s*viejo|viuda)", msg):
         ev = CARNAVAL_EVENTS["dec_31"]

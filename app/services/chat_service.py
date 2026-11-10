@@ -102,6 +102,31 @@ CARNIVAL_SCHEDULE_DATA: Dict[str, Dict[str, Any]] = {
         ],
         "notes": "Zona céntrica totalmente peatonal para artistas, niños y familias."
     },
+    "29-dic": {
+        "name": "Concierto de Música Latinoamericana",
+        "date_label": "29 de Diciembre",
+        "hours": "15:00 - 23:00",
+        "description": "Tributo andino y sacro con ensambles tradicionales de vientos, charangos y quenas en Plaza de Nariño y Plaza del Carnaval.",
+        "start": "Plaza de Nariño",
+        "end": "Plaza del Carnaval y la Cultura",
+        "closed_points": [
+            "Anillo peatonal Plaza de Nariño",
+            "Acceso Calle 19 Plaza del Carnaval"
+        ],
+        "notes": "Velada de contemplación andina y ritmos latinoamericanos."
+    },
+    "30-dic": {
+        "name": "Serenata a Pasto",
+        "date_label": "30 de Diciembre",
+        "hours": "17:00 - 23:30",
+        "description": "Tríos regionales, boleros y música de cuerdas en tributo de amor a San Juan de Pasto en la Plaza de Nariño.",
+        "start": "Plaza de Nariño (Tarima de Tríos)",
+        "end": "Plaza de Nariño",
+        "closed_points": [
+            "Peatonalización perímetro Plaza de Nariño"
+        ],
+        "notes": "Prohibido el juego con espuma o cosmético; velada bohemia familiar."
+    },
     "31-dic": {
         "name": "Desfile de Años Viejos y Viudas",
         "date_label": "31 de Diciembre",
@@ -301,15 +326,17 @@ GUANENA_BOT_SYSTEM_PROMPT = """Eres GUANEÑABOT, el Asistente Virtual Oficial co
 - Cierras o enfatizas tus mensajes con el célebre grito festivo: "¡Que viva Pasto, Carajo!".
 - Utilizas de forma natural y respetuosa expresiones autóctonas nariñenses: "paisano", "guagua" (niño), "a la orden", "¡caray!", "achichucas", celebrando la música de La Guaneña.
 
-2. CONOCIMIENTO EXACTO DEL CARNAVAL DE PASTO:
-- 28 de Diciembre: Arcoíris en el Asfalto (El Colorado, Cra 23 entre Calles 14 y 15). Celebración ecológica, arte con tiza sobre el pavimento por la paz y el agua.
-- 31 de Diciembre: Desfile de Años Viejos y Viudas (Humor, sátira política, testamentos y quema de monigotes).
-- 02 de Enero: Carnavalito (El semillero infantil con mini-carrozas y homenaje a la Virgen de las Mercedes).
-- 03 de Enero: Canto a la Tierra (Desfile de Colectivos Coreográficos, miles de músicos y danzantes andinos con zampoñas, quenas y bombos por la Cra 27).
-- 04 de Enero: Llegada de la Familia Castañeda (Teatro callejero, carretas de época conmemorando la comitiva de 1929; centro histórico 100% peatonalizado).
-- 05 de Enero: Día de Negros (Juego fraternal de cosmético negro y orquestas en vivo en Plaza del Carnaval y Plaza de Nariño; sin carrozas gigantes).
-- 06 de Enero: Día de Blancos / Desfile Magno (La cumbre del Carnaval: Majestuosas Carrozas Monumentales de hasta 12m de altura, comparsas, murgas, juego con cosmético blanco, talco perfumado y carioca).
-- 07 de Enero: Festival del Cuy y la Cultura Campesina en los corregimientos de Obonuco y Catambuco.
+2. CONOCIMIENTO EXACTO DEL CARNAVAL DE PASTO (ITINERARIO OFICIAL 28 DIC - 7 ENE):
+- 28 de Diciembre: "Día de los Inocentes y Arcoíris en el Asfalto" — Pintura con tiza sobre el pavimento en la Calle del Colorado (Cra 23 entre Calles 14 y 15), arte urbano por la paz y cuidado ecológico del agua.
+- 29 de Diciembre: "Concierto de Música Latinoamericana" — Tributo andino y sacro con ensambles tradicionales de vientos, charangos y quenas en Plaza de Nariño y Plaza del Carnaval.
+- 30 de Diciembre: "Serenata a Pasto" — Noche romántica de tríos regionales, guitarras, requintos y boleros en homenaje de amor a San Juan de Pasto en la Plaza de Nariño.
+- 31 de Diciembre: "Desfile de Años Viejos y Viudas" — Desfile satírico de monigotes y muñecos sobre política y actualidad con testamentos rimados, culminando en la quema simbólica del año viejo y bienvenida al Año Nuevo.
+- 02 de Enero: "Carnavalito y Ofrenda a la Virgen de las Mercedes" — Desfile del semillero infantil con mini-carrozas y disfraces tradicionales, junto a la romería y ofrenda a la Patrona de Pasto.
+- 03 de Enero: "Día del Canto a la Tierra y Colectivos Coreográficos" — Más de 2.000 danzantes y músicos andinos con zampoñas, quenas y bombos rindiendo tributo a la Pachamama a lo largo de La Senda.
+- 04 de Enero: "Llegada de la Familia Castañeda" — Gran estampa teatral callejera de hospitalidad campesina que conmemora la comitiva forastera de 1929; apertura oficial con centro histórico 100% peatonalizado.
+- 05 de Enero: "Día de los Negros (Juego de Caricias)" — Conmemoración histórica de la libertad afrocolombiana mediante el juego fraterno con cosmético negro bajo el grito: "¡Que vivan los Negros!".
+- 06 de Enero: "Día de los Blancos (Desfile Magno)" — La cumbre monumental del Carnaval a lo largo de los 7.5 km de la Senda: colosales Carrozas Monumentales (hasta 15m), carrozas no motorizadas, comparsas, murgas, disfraces individuales, talco perfumado y carioca.
+- 07 de Enero: "Día del Cuy y Festival Campesino / Remate" — Culminación gastronómica y folclórica en los corregimientos rurales de Catambuco y Obonuco con cuy asado a la brasa, música campesina y son sureño.
 
 3. HITOS CLAVE DE LA SENDA DEL CARNAVAL:
 - Escuela Normal Superior [1.2050, -77.2830]: Punto de salida tradicional y concentración de desfiles.
@@ -478,6 +505,42 @@ def _generate_smart_fallback(
         )
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
+    # 3.1 29 de Diciembre - Concierto de Música Latinoamericana
+    if "29" in q or "latinoamerican" in q:
+        d = CARNIVAL_SCHEDULE_DATA["29-dic"]
+        reply = (
+            f"¡Qué viva el sur, paisano! 🎶 El **29 de diciembre** disfrutamos del **{d['name']}** ({d['hours']}).\n\n"
+            f"🎸 {d['description']}\n"
+            "📍 Plaza de Nariño y Plaza del Carnaval.\n"
+            "✨ Homenaje a la sonoridad de los Andes con zampoñas, charangos y quenas.\n\n"
+            "¡Una velada de contemplación y orgullo andino! ¡Que viva Pasto, Carajo!"
+        )
+        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
+
+    # 3.2 30 de Diciembre - Serenata a Pasto
+    if "30" in q or "serenata" in q:
+        d = CARNIVAL_SCHEDULE_DATA["30-dic"]
+        reply = (
+            f"¡Noche romántica, paisano! 🌙 El **30 de diciembre** celebramos la **{d['name']}** ({d['hours']}).\n\n"
+            f"🎻 {d['description']}\n"
+            "📍 Plaza de Nariño (Tarima de Tríos).\n"
+            "✨ Los mejores tríos de cuerdas, requintos y boleros en homenaje de amor a nuestra ciudad.\n\n"
+            "¡Espacio familiar para gozar de la bohemia pastusa! ¡Que viva Pasto, Carajo!"
+        )
+        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
+
+    # 3.3 31 de Diciembre - Desfile de Años Viejos
+    if "31" in q or "año viejo" in q or "anos viejos" in q or "años viejos" in q:
+        d = CARNIVAL_SCHEDULE_DATA["31-dic"]
+        reply = (
+            f"¡A reír con la picardía pastusa, paisano! 😂 El **31 de diciembre** vivimos el **{d['name']}** ({d['hours']}).\n\n"
+            f"🔥 {d['description']}\n"
+            "📍 Recorrido: Salida desde la Normal Superior hacia Champagnat.\n"
+            "✨ Monigotes satíricos con ingeniosos testamentos rimados y quema simbólica a la medianoche.\n\n"
+            "¡Despidiendo el año con alegría e ingenio! ¡Que viva Pasto, Carajo!"
+        )
+        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
+
     # 4. 02 de Enero - Carnavalito
     if "2 de ene" in q or "02 de ene" in q or "carnavalito" in q:
         d = CARNIVAL_SCHEDULE_DATA["02-ene"]
@@ -538,12 +601,24 @@ def _generate_smart_fallback(
         )
         return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
 
-    # 9. Respuesta general de bienvenida
+    # 9. 07 de Enero - Festival del Cuy y Cultura Campesina
+    if "7 de ene" in q or "07 de ene" in q or "cuy" in q or "festival campesino" in q or "remate" in q:
+        d = CARNIVAL_SCHEDULE_DATA["07-ene"]
+        reply = (
+            f"¡Qué delicia de remate, paisano! El **07 de enero** vivimos el **{d['name']}** ({d['hours']}). 🐹🔥\n\n"
+            f"• {d['description']}\n"
+            "• **Sectores:** Corregimientos de Catambuco y Obonuco.\n"
+            "• **Gastronomía:** El auténtico cuy asado a la brasa con papas pastusas y ají de maní, junto a música campesina en vivo.\n\n"
+            "¡El cierre perfecto con sabor a nuestra tierra! ¡Que viva Pasto, Carajo!"
+        )
+        return ChatResponse(response=reply, reply=reply, action=action, sources_used=sources_used)
+
+    # 10. Respuesta general de bienvenida
     reply = (
         "¡Bienvenido a San Juan de Pasto, paisano! Soy **GuaneñaBot**, tu guía con IA para vivir el Carnaval de Negros y Blancos al 100%. 🎉\n\n"
         "Puedo orientarte con precisión sobre:\n"
-        "📅 **Fechas Clave:** 28 Dic (Arcoíris en el Asfalto), 02 Ene (Carnavalito), 03 Ene (Canto a la Tierra), "
-        "04 Ene (Familia Castañeda), 05 Ene (Día de Negros) y 06 Ene (Desfile Magno de Carrozas).\n"
+        "📅 **Fechas Clave:** 28 Dic (Arcoíris en el Asfalto), 29 Dic (Música Latinoamericana), 30 Dic (Serenata a Pasto), 31 Dic (Años Viejos), "
+        "02 Ene (Carnavalito), 03 Ene (Canto a la Tierra), 04 Ene (Familia Castañeda), 05 Ene (Día de Negros), 06 Ene (Desfile Magno) y 07 Ene (Festival del Cuy).\n"
         "🗺️ **La Senda:** Normal Superior, Carrera 27, Plaza del Carnaval y Sector Champagnat.\n"
         "🏥 **Puestos de Salud:** Ubicación en tiempo real de PMUs y módulos de primeros auxilios.\n"
         "🍽️ **Gastronomía:** Los mejores asaderos de cuy tradicional y café nariñense.\n\n"

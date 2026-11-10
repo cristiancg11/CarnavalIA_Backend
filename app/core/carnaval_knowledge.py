@@ -18,6 +18,24 @@ CARNAVAL_EVENTS: Dict[str, Dict[str, Any]] = {
         "description": "Jornada de arte efímero donde la ciudadanía pinta con tiza sobre el pavimento, celebrando la paz, la creatividad urbana y el cuidado del agua.",
         "category": "desfile"
     },
+    "dec_29": {
+        "event_date": "dec_29",
+        "name": "Concierto de Música Latinoamericana",
+        "date_label": "29 de Diciembre",
+        "start_coords": [1.2168, -77.2805],
+        "start_location": "Plaza de Nariño / Plaza del Carnaval",
+        "description": "Tributo musical andino y latinoamericano con agrupaciones de música sagrada, vientos y cuerdas en homenaje a nuestra herencia cultural.",
+        "category": "evento_cultural"
+    },
+    "dec_30": {
+        "event_date": "dec_30",
+        "name": "Serenata a Pasto",
+        "date_label": "30 de Diciembre",
+        "start_coords": [1.2168, -77.2805],
+        "start_location": "Plaza de Nariño",
+        "description": "Noche de gala con los mejores tríos de cuerdas, boleros y música folclórica en homenaje y gratitud a la Muy Noble y Leal Ciudad de San Juan de Pasto.",
+        "category": "evento_cultural"
+    },
     "dec_31": {
         "event_date": "dec_31",
         "name": "Desfile de Años Viejos",
